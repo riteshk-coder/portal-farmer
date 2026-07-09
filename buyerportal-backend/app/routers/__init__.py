@@ -1,0 +1,10 @@
+from app.routers.auth import router as auth_router
+from app.routers.lots import router as lots_router
+from app.routers.quotes import router as quotes_router
+from app.routers.contracts import router as contracts_router
+from app.routers.disputes import router as disputes_router
+from app.routers.escrow import router as escrow_router
+from app.routers.roles import router as roles_router
+from app.routers.logs import router as logs_router
+from app.routers.analytics import router as analytics_router
+from app.routers.scores import router as scores_router

@@ -15,6 +15,7 @@ interface KpiCardProps {
   accentColor?: string;
   iconBg?: string;
   className?: string;
+  onClick?: () => void;
 }
 
 export const KpiCard: React.FC<KpiCardProps> = ({
@@ -27,6 +28,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   accentColor = "#0F766E",
   iconBg = "#CCFBF1",
   className,
+  onClick,
 }) => {
   const TrendIcon =
     trend === "up" ? IconTrendingUp : trend === "down" ? IconTrendingDown : IconMinus;
@@ -40,10 +42,12 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 
   return (
     <motion.div
+      onClick={onClick}
       whileHover={{ y: -4, boxShadow: "var(--shadow-card-hover)" }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       className={cn(
         "bg-bg-p border border-bd-t rounded-lg p-5 shadow-card transition-shadow duration-200",
+        onClick && "cursor-pointer hover:border-primary/40 select-none",
         className
       )}
     >

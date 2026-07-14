@@ -46,5 +46,4 @@ def release_escrow(contract: Contract, db: Session) -> LedgerEntry:
 
     # Update contract escrow status
     contract.escrow_status = EscrowStatus.released
-    db.commit()
     return entry1

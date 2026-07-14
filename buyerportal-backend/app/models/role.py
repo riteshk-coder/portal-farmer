@@ -10,6 +10,8 @@ class SystemRole(Base):
     is_superadmin = Column(Boolean, default=False)
     users_assigned = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id", use_alter=True, name="fk_system_role_updated_by"), nullable=True)
 
 class RolePermission(Base):
     __tablename__ = "role_permissions"
@@ -20,3 +22,5 @@ class RolePermission(Base):
     can_add = Column(Boolean, default=False)
     can_edit = Column(Boolean, default=False)
     can_delete = Column(Boolean, default=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)

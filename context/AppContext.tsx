@@ -54,7 +54,7 @@ export interface Dispute {
   buyerName: string;
   fpoName: string;
   description: string;
-  status: "Review" | "Pending" | "Resolved";
+  status: "Review" | "Pending" | "Resolved" | "In progress" | "Not resolved";
   filedAt: string;
 }
 
@@ -116,7 +116,7 @@ interface AppContextType {
   ledger: LedgerEntry[];
   toasts: Toast[];
   modal: {
-    type: "quote-response" | "buyer-quote" | "buyer-counter" | "fpo-counter" | "buyer-esign" | "user-profile" | null;
+    type: "quote-response" | "buyer-quote" | "buyer-counter" | "fpo-counter" | "buyer-esign" | "user-profile" | "buyer-lot-details" | null;
     data: any;
   };
   loginAsRole: (role: Role) => void;
@@ -145,6 +145,8 @@ interface AppContextType {
   signContract: (contractId: string, method: "esign" | "dsc") => void;
   releaseFunds: (contractId: string) => void;
   resolveDispute: (disputeId: string) => void;
+  fileDispute: (type: Dispute["type"], lotId: string, description: string) => void;
+  updateDisputeStatus: (disputeId: string, status: Dispute["status"]) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -459,6 +461,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = () => {
     setCurrentRole(null);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user_role");
+      localStorage.removeItem("user_name");
+      localStorage.removeItem("user_email");
+      localStorage.removeItem("user_position");
+    }
   };
 
   const setActiveTabForRole = (role: Role, tab: string) => {
@@ -810,23 +819,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resolveDispute = (disputeId: string) => {
+    updateDisputeStatus(disputeId, "Resolved");
+  };
+
+  const fileDispute = (type: Dispute["type"], lotId: string, description: string) => {
+    const id = `DSP-${Math.floor(100 + Math.random() * 900)}`;
+    const newDispute: Dispute = {
+      id,
+      type,
+      lotId,
+      buyerName: currentRole === "buyer" ? "R.K. Traders Pvt. Ltd" : "Spice Exports Ltd",
+      fpoName: "Nashik Agro FPO",
+      description,
+      status: "Review",
+      filedAt: new Date().toISOString().split("T")[0],
+    };
+
+    setDisputes((prev) => [newDispute, ...prev]);
+
+    // Send notifications
+    const sysLog: SystemLog = {
+      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+      channel: "System",
+      recipient: "MahaFPC Regulator",
+      message: `New Dispute ${id} (${type}) filed for Lot ${lotId} by ${currentRole === "buyer" ? "Buyer" : "FPO"}.`,
+      timestamp: "Just now",
+    };
+
+    const waLog: SystemLog = {
+      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+      channel: "WhatsApp",
+      recipient: "+91 99000 12345 (Regulator)",
+      message: `Alert: Dispute ${id} filed. Reason: ${description}.`,
+      timestamp: "Just now",
+    };
+
+    const emailLog: SystemLog = {
+      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+      channel: "Email",
+      recipient: "compliance@mahafpc.in",
+      message: `MahaFPC Arbitration Case opened: ${id} for Lot ${lotId}. Status set to Review.`,
+      timestamp: "Just now",
+    };
+
+    setLogs((prev) => [sysLog, waLog, emailLog, ...prev]);
+    showToast(`Dispute ${id} filed successfully with MahaFPC.`, "success");
+  };
+
+  const updateDisputeStatus = (disputeId: string, status: Dispute["status"]) => {
     setDisputes((prev) =>
-      prev.map((d) => (d.id === disputeId ? { ...d, status: "Resolved" } : d))
+      prev.map((d) => (d.id === disputeId ? { ...d, status } : d))
     );
 
     const dispute = disputes.find((d) => d.id === disputeId);
     if (dispute) {
-      const newLog: SystemLog = {
+      const sysLog: SystemLog = {
         id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
         channel: "System",
-        recipient: "MahaFPC Arbitration",
-        message: `Dispute ${disputeId} regarding lot ${dispute.lotId} resolved by Regulator. Settlement terms dispatched.`,
+        recipient: "Trade Parties",
+        message: `Dispute ${disputeId} status updated to ${status} by Regulator.`,
         timestamp: "Just now",
       };
-      setLogs((prev) => [newLog, ...prev]);
+
+      const waLog: SystemLog = {
+        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+        channel: "WhatsApp",
+        recipient: "+91 99000 12345",
+        message: `MahaFPC Dispute Update: Dispute ${disputeId} is now ${status}.`,
+        timestamp: "Just now",
+      };
+
+      const emailLog: SystemLog = {
+        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+        channel: "Email",
+        recipient: "admin@mahafpc.in",
+        message: `Arbitration Notice: Case ${disputeId} status changed to ${status}. Details logged.`,
+        timestamp: "Just now",
+      };
+
+      setLogs((prev) => [sysLog, waLog, emailLog, ...prev]);
     }
 
-    showToast(`Dispute ${disputeId} resolved.`, "success");
+    showToast(`Dispute ${disputeId} status updated to ${status}.`, "success");
   };
 
   const createRole = (name: string, description: string) => {
@@ -915,6 +989,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         signContract,
         releaseFunds,
         resolveDispute,
+        fileDispute,
+        updateDisputeStatus,
       }}
     >
       {children}

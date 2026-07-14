@@ -20,3 +20,6 @@ class DisputeResponse(BaseSchema):
     @field_serializer("filed_at")
     def serialize_datetime(self, dt: datetime) -> str:
         return dt.isoformat()
+
+# Backward-compatible aliases
+DisputeCreate = DisputeCreateRequest

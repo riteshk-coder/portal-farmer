@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { useApp } from "@/context/AppContext";
+import { useApp, Dispute } from "@/context/AppContext";
 import { DashboardShell } from "@/components/DashboardShell";
 import { Card } from "@/components/Card";
 import { Pill } from "@/components/Pill";
 import { DataTable } from "@/components/DataTable";
 import { KpiCard } from "@/components/KpiCard";
 import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/Button";
 import { ChartPlaceholder } from "@/components/ui/ChartPlaceholder";
 import {
   IconReceipt,
@@ -28,6 +29,8 @@ export default function BuyerDashboard() {
     showToast,
     releaseFunds,
     respondToQuote,
+    disputes,
+    fileDispute,
   } = useApp();
 
   // Ensure role is synchronized
@@ -46,10 +49,10 @@ export default function BuyerDashboard() {
         <PageHeader title="Overview" subtitle="Procurement alerts, quotes, escrow, and goods receipt" />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <KpiCard label="New lot alerts" value="9" sub="3 via WhatsApp" trend="up" trendValue="+3" icon={<IconBell className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" />
-          <KpiCard label="Active quotes" value="3" sub="1 counter pending" trend="neutral" trendValue="Active" icon={<IconReceipt className="w-5 h-5" />} accentColor="#F59E0B" iconBg="#FFFBEB" />
-          <KpiCard label="Escrow funded" value="₹11L" sub="2 contracts" trend="up" trendValue="+₹2L" icon={<IconShieldLock className="w-5 h-5" />} accentColor="#6366F1" iconBg="#EEF2FF" />
-          <KpiCard label="GRN pending" value="1" sub="Delivery today" trend="down" trendValue="Urgent" icon={<IconTruck className="w-5 h-5" />} accentColor="#EF4444" iconBg="#FEF2F2" />
+          <KpiCard label="New lot alerts" value="9" sub="3 via WhatsApp" trend="up" trendValue="+3" icon={<IconBell className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" onClick={() => setActiveTabForRole("buyer", "Lot alerts")} />
+          <KpiCard label="Active quotes" value="3" sub="1 counter pending" trend="neutral" trendValue="Active" icon={<IconReceipt className="w-5 h-5" />} accentColor="#F59E0B" iconBg="#FFFBEB" onClick={() => setActiveTabForRole("buyer", "My quotes")} />
+          <KpiCard label="Escrow funded" value="₹11L" sub="2 contracts" trend="up" trendValue="+₹2L" icon={<IconShieldLock className="w-5 h-5" />} accentColor="#6366F1" iconBg="#EEF2FF" onClick={() => setActiveTabForRole("buyer", "Escrow")} />
+          <KpiCard label="GRN pending" value="1" sub="Delivery today" trend="down" trendValue="Urgent" icon={<IconTruck className="w-5 h-5" />} accentColor="#EF4444" iconBg="#FEF2F2" onClick={() => setActiveTabForRole("buyer", "Issue GRN")} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -81,7 +84,27 @@ export default function BuyerDashboard() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => showToast(`Viewing ${alert.id}`, "info")}
+                        onClick={() => {
+                          const lot = lots.find((l) => l.id === alert.id);
+                          if (lot) {
+                            openModal("buyer-lot-details", { lot });
+                          } else {
+                            openModal("buyer-lot-details", {
+                              lot: {
+                                id: alert.id,
+                                description: alert.desc.replace(/^\d+\s+MT\s+/, ""),
+                                qty: parseInt(alert.desc) || 6,
+                                grade: alert.desc.includes("A") ? "A" : "B",
+                                status: "Matched",
+                                priceExpectation: parseInt(alert.price.replace(/[^\d]/g, "")) || 121,
+                                location: "Nashik, MH",
+                                fpoName: "Nashik Agro FPO",
+                                createdAt: "1 hour ago",
+                                notes: "Quality certified organic turmeric finger lot."
+                              }
+                            });
+                          }
+                        }}
                         className="px-2.5 py-0.5 text-[11px] font-bold text-tx-s bg-bg-s border border-bd-t hover:bg-bg-t rounded transition-colors shrink-0"
                       >
                         View
@@ -185,6 +208,13 @@ export default function BuyerDashboard() {
 
     return (
       <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("buyer", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
         <div>
           <h2 className="font-outfit font-bold text-[15px] text-tx-p leading-none">Catalog Lot Alerts</h2>
           <p className="text-[11px] text-tx-t mt-1 font-semibold">Active turmeric crop lots matched to your buyer profile.</p>
@@ -263,6 +293,13 @@ export default function BuyerDashboard() {
 
     return (
       <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("buyer", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
         <div>
           <h2 className="font-outfit font-bold text-[15px] text-tx-p leading-none">Bidding & Negotiation Console</h2>
           <p className="text-[11px] text-tx-t mt-1 font-semibold">Track bidding progress and respond to FPO counters.</p>
@@ -380,6 +417,13 @@ export default function BuyerDashboard() {
 
     return (
       <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("buyer", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
         <div className="page-hd">
           <div className="page-title">Escrow</div>
           <div className="page-sub">Fund escrow and track payment releases</div>
@@ -500,6 +544,13 @@ export default function BuyerDashboard() {
 
     return (
       <div className="max-w-[500px] mx-auto bg-bg-p border border-bd-t rounded-md p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("buyer", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-4"
+        >
+          &larr; Back to Overview
+        </button>
         <div className="border-b border-bd-t pb-3 mb-4">
           <h2 className="font-outfit font-bold text-[14px] text-tx-p flex items-center gap-1.5">
             <IconReceipt className="w-4 h-4 text-amb" />
@@ -584,6 +635,91 @@ export default function BuyerDashboard() {
     );
   };
 
+  const renderDisputes = () => {
+    const buyerDisputes = disputes.filter((d) => d.buyerName === "R.K. Traders Pvt. Ltd");
+
+    const handleFileDispute = (e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.currentTarget as HTMLFormElement;
+      const type = (form.elements.namedItem("disputeType") as HTMLSelectElement).value as Dispute["type"];
+      const lotId = (form.elements.namedItem("lotId") as HTMLSelectElement).value;
+      const desc = (form.elements.namedItem("description") as HTMLTextAreaElement).value;
+      
+      if (!lotId || !desc) {
+        showToast("Please fill in all fields to file complaint.", "error");
+        return;
+      }
+      fileDispute(type, lotId, desc);
+      form.reset();
+    };
+
+    const columns = [
+      { header: "Case ID", render: (item: any) => <span className="font-mono font-bold text-tx-p">{item.id}</span> },
+      { header: "Type", render: (item: any) => <span className="text-cor font-bold">{item.type}</span> },
+      { header: "Lot ID", render: (item: any) => <span className="font-mono text-tx-s">{item.lotId}</span> },
+      { header: "Supplier FPO", render: (item: any) => <span className="font-semibold text-tx-p">{item.fpoName}</span> },
+      { header: "Summary", render: (item: any) => <span className="text-tx-s">{item.description}</span> },
+      { header: "Status", render: (item: any) => <Pill status={item.status} /> },
+    ];
+
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("buyer", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
+        <PageHeader title="Disputes & Complaints" subtitle="File quality conformance or payment hold disputes with MahaFPC Regulator" />
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="lg:col-span-4">
+            <Card title="File New Dispute">
+              <form onSubmit={handleFileDispute} className="space-y-4 text-[12px] font-semibold">
+                <div>
+                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Dispute Category</label>
+                  <select name="disputeType" className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-amb-m">
+                    <option value="Quality mismatch">Quality mismatch</option>
+                    <option value="Payment delay">Payment delay</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Select Lot ID</label>
+                  <select name="lotId" className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-amb-m">
+                    {lots.map((l) => (
+                      <option key={l.id} value={l.id}>{l.id} &middot; {l.description}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Detailed Complaint Summary</label>
+                  <textarea
+                    name="description"
+                    rows={4}
+                    placeholder="Provide details about quality report differences or unpaid escrow holds..."
+                    className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-amb-m"
+                    required
+                  />
+                </div>
+
+                <Button type="submit" className="w-full">File Dispute with MahaFPC</Button>
+              </form>
+            </Card>
+          </div>
+
+          <div className="lg:col-span-8">
+            <Card title="Dispute Log & Case Status" subtitle="Ongoing quality disputes and regulatory resolutions">
+              <DataTable columns={columns} data={buyerDisputes} emptyMessage="No disputes filed by you." />
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <DashboardShell>
       {activeTab === "Overview" && renderOverview()}
@@ -593,6 +729,7 @@ export default function BuyerDashboard() {
       {activeTab === "Escrow" && renderEscrow()}
       {activeTab === "Incoming goods" && renderIncomingGoods()}
       {activeTab === "Issue GRN" && renderIssueGrn()}
+      {activeTab === "Disputes" && renderDisputes()}
     </DashboardShell>
   );
 }

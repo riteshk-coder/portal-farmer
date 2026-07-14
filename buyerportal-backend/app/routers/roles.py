@@ -2,35 +2,29 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_role
 from app.models.user import User
 from app.models.role import SystemRole, RolePermission
-from app.schemas.role import RoleCreate, RoleUpdate, AssignRoleRequest, SystemRoleResponse, PermissionsUpdate
+from app.schemas.roles import RoleCreate, RoleUpdate, AssignRoleRequest, SystemRoleResponse, PermissionsUpdate
+from datetime import datetime
 
 router = APIRouter(prefix="/roles", tags=["roles"])
 
 @router.get("", response_model=List[SystemRoleResponse])
 def get_roles(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    roles = db.query(SystemRole).all()
-    return [
-        {
-            "id": r.id,
-            "name": r.name,
-            "description": r.description,
-            "is_superadmin": r.is_superadmin,
-            "usersAssigned": r.users_assigned,
-            "created": r.created_at.strftime("%Y-%m-%dT%H:%M:%SZ") if r.created_at else ""
-        }
-        for r in roles
-    ]
+    return db.query(SystemRole).all()
 
 @router.post("", response_model=SystemRoleResponse)
-def create_role(body: RoleCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_role(
+    body: RoleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("mahafpc"))
+):
     exists = db.query(SystemRole).filter(SystemRole.name == body.name).first()
     if exists:
         raise HTTPException(status_code=400, detail="Role already exists")
     
-    r = SystemRole(name=body.name, description=body.description)
+    r = SystemRole(name=body.name, description=body.description, updated_by=current_user.id)
     db.add(r)
     db.commit()
     db.refresh(r)
@@ -43,41 +37,53 @@ def create_role(body: RoleCreate, db: Session = Depends(get_db), current_user: U
             can_view=False,
             can_add=False,
             can_edit=False,
-            can_delete=False
+            can_delete=False,
+            updated_by=current_user.id
         ))
     db.commit()
 
-    return {
-        "id": r.id,
-        "name": r.name,
-        "description": r.description,
-        "is_superadmin": r.is_superadmin,
-        "usersAssigned": r.users_assigned,
-        "created": r.created_at.strftime("%Y-%m-%dT%H:%M:%SZ") if r.created_at else ""
-    }
+    return r
 
 @router.put("/{id}", response_model=SystemRoleResponse)
-def update_role(id: int, body: RoleUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_role(
+    id: int,
+    body: RoleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("mahafpc"))
+):
     r = db.query(SystemRole).filter(SystemRole.id == id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Role not found")
+        
+    # Superadmin safety guard (G7)
+    if r.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin role details cannot be updated")
+
     r.name = body.name
     r.description = body.description
+    r.updated_by = current_user.id
+    r.updated_at = datetime.utcnow()
     db.commit()
-    return {
-        "id": r.id,
-        "name": r.name,
-        "description": r.description,
-        "is_superadmin": r.is_superadmin,
-        "usersAssigned": r.users_assigned,
-        "created": r.created_at.strftime("%Y-%m-%dT%H:%M:%SZ") if r.created_at else ""
-    }
+    return r
 
 @router.delete("/{id}")
-def delete_role(id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_role(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("mahafpc"))
+):
     r = db.query(SystemRole).filter(SystemRole.id == id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Role not found")
+        
+    # Superadmin safety guard (G7)
+    if r.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin role cannot be deleted")
+
+    # Assigned users check (G8)
+    if r.users_assigned > 0:
+        raise HTTPException(status_code=409, detail="Role cannot be deleted while users are assigned to it")
+
     db.query(RolePermission).filter(RolePermission.role_id == id).delete()
     db.delete(r)
     db.commit()
@@ -97,7 +103,20 @@ def get_role_permissions(id: int, db: Session = Depends(get_db), current_user: U
     return res
 
 @router.put("/{id}/permissions")
-def update_role_permissions(id: int, body: PermissionsUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_role_permissions(
+    id: int,
+    body: PermissionsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("mahafpc"))
+):
+    r = db.query(SystemRole).filter(SystemRole.id == id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Role not found")
+        
+    # Superadmin safety guard (G7)
+    if r.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin permissions cannot be modified")
+
     db.query(RolePermission).filter(RolePermission.role_id == id).delete()
     for mod, actions in body.permissions.items():
         db.add(RolePermission(
@@ -106,13 +125,21 @@ def update_role_permissions(id: int, body: PermissionsUpdate, db: Session = Depe
             can_view=actions.get("view", False),
             can_add=actions.get("add", False),
             can_edit=actions.get("edit", False),
-            can_delete=actions.get("delete", False)
+            can_delete=actions.get("delete", False),
+            updated_by=current_user.id
         ))
+    r.updated_by = current_user.id
+    r.updated_at = datetime.utcnow()
     db.commit()
     return {"status": "success"}
 
 @router.post("/users/{user_id}/assign-role")
-def assign_role(user_id: int, body: AssignRoleRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def assign_role(
+    user_id: int,
+    body: AssignRoleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("mahafpc"))
+):
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")

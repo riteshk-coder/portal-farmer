@@ -5,7 +5,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.models.user import User, RoleType
 from app.models.lot import Lot, LotStatus
-from app.schemas.lot import LotResponse
+from app.schemas.lots import LotResponse
 from app.services.ai_matching import run_ai_matching
 from app.services.notification_service import log_notification, NotificationChannel
 import random
@@ -36,13 +36,20 @@ def lot_to_dict(lot: Lot) -> dict:
         ]
     }
 
+from fastapi import UploadFile, File
+
 @router.get("", response_model=List[LotResponse])
-def get_lots(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_lots(
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     # FPOs see their own lots, others see all
+    query = db.query(Lot)
     if current_user.role_type == RoleType.fpo:
-        lots = db.query(Lot).filter(Lot.fpo_id == current_user.fpo_id).all()
-    else:
-        lots = db.query(Lot).all()
+        query = query.filter(Lot.fpo_id == current_user.fpo_id)
+    lots = query.limit(limit).offset(offset).all()
     return [lot_to_dict(l) for l in lots]
 
 @router.get("/{lot_id}", response_model=LotResponse)
@@ -63,9 +70,26 @@ def upload_lot(
     curcuminPercent: Optional[float] = Form(None),
     harvestDate: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
+    labReport: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("fpo"))
 ):
+    if labReport:
+        # Validate size (max 5MB)
+        try:
+            labReport.file.seek(0, 2)
+            size = labReport.file.tell()
+            labReport.file.seek(0)
+        except Exception:
+            size = 0
+        if size > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
+        
+        # Validate type
+        allowed = ["application/pdf", "image/png", "image/jpeg", "image/jpg"]
+        if labReport.content_type not in allowed:
+            raise HTTPException(status_code=400, detail="Invalid file type. Only PDF, PNG, and JPEG are allowed.")
+
     lot_id = f"LOT-{random.randint(2800, 2900)}"
     new_lot = Lot(
         id=lot_id,

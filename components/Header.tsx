@@ -34,6 +34,8 @@ interface HeaderProps {
     avatarInitials: string;
     avatarBg: string;
     avatarText: string;
+    userEmail?: string;
+    userPosition?: string;
   };
   onLogout: () => void;
   onRoleSwitch: (role: RoleType) => void;
@@ -49,12 +51,50 @@ export const Header: React.FC<HeaderProps> = ({
   onMenuToggle,
   sidebarOpen,
 }) => {
-  const { openModal } = useApp();
+  const { openModal, logs, currentRole, setActiveTabForRole } = useApp();
+
+  const handleNotificationClick = (message: string) => {
+    setNotificationsOpen(false); // Close dropdown
+    const msg = message.toLowerCase();
+
+    if (currentRole === "fpo") {
+      if (msg.includes("quote") || msg.includes("bid")) {
+        setActiveTabForRole("fpo", "Quotes");
+      } else if (msg.includes("contract") || msg.includes("esign")) {
+        setActiveTabForRole("fpo", "Contracts");
+      } else if (msg.includes("payout") || msg.includes("split") || msg.includes("paid")) {
+        setActiveTabForRole("fpo", "Payouts");
+      } else {
+        setActiveTabForRole("fpo", "My lots");
+      }
+    } else if (currentRole === "buyer") {
+      if (msg.includes("quote") || msg.includes("bid") || msg.includes("counter")) {
+        setActiveTabForRole("buyer", "My quotes");
+      } else if (msg.includes("contract") || msg.includes("esign") || msg.includes("signing")) {
+        setActiveTabForRole("buyer", "Sign contracts");
+      } else if (msg.includes("escrow") || msg.includes("deposit")) {
+        setActiveTabForRole("buyer", "Escrow");
+      } else if (msg.includes("grn") || msg.includes("arrived") || msg.includes("shipment")) {
+        setActiveTabForRole("buyer", "Issue GRN");
+      } else {
+        setActiveTabForRole("buyer", "Lot alerts");
+      }
+    } else if (currentRole === "mahafpc") {
+      if (msg.includes("dispute") || msg.includes("resolution") || msg.includes("arbitration")) {
+        setActiveTabForRole("mahafpc", "Disputes");
+      } else {
+        setActiveTabForRole("mahafpc", "Overview");
+      }
+    }
+  };
+
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const profileRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const isDark = document.documentElement.classList.contains("dark");
@@ -65,6 +105,9 @@ export const Header: React.FC<HeaderProps> = ({
     const handleClickOutside = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setProfileOpen(false);
+      }
+      if (notificationsRef.current && !notificationsRef.current.contains(e.target as Node)) {
+        setNotificationsOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -193,13 +236,63 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Notifications */}
-        <button
-          className="relative p-2 rounded-md text-tx-s hover:bg-bg-t hover:text-tx-p transition-colors"
-          aria-label="Notifications"
-        >
-          <IconBell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-full ring-2 ring-bg-p" aria-hidden />
-        </button>
+        <div className="relative" ref={notificationsRef}>
+          <button
+            onClick={() => setNotificationsOpen(!notificationsOpen)}
+            className="relative p-2 rounded-md text-tx-s hover:bg-bg-t hover:text-tx-p transition-colors"
+            aria-label="Notifications"
+            aria-expanded={notificationsOpen}
+            aria-haspopup="menu"
+          >
+            <IconBell className="w-5 h-5" />
+            {logs && logs.length > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-full ring-2 ring-bg-p" aria-hidden />
+            )}
+          </button>
+
+          <AnimatePresence>
+            {notificationsOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                transition={{ duration: 0.15 }}
+                className="absolute right-0 mt-2 w-80 sm:w-96 bg-bg-p border border-bd-t rounded-lg shadow-lg py-1 z-50 max-h-[400px] overflow-y-auto"
+                role="menu"
+              >
+                <div className="px-4 py-3 border-b border-bd-t flex items-center justify-between">
+                  <p className="text-sm font-semibold text-tx-p">System Logs & Notifications</p>
+                  <span className="text-xs bg-bg-s text-tx-s px-2 py-0.5 rounded-full font-medium">
+                    {logs ? logs.length : 0} total
+                  </span>
+                </div>
+                {!logs || logs.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-tx-s text-sm">
+                    No notifications or logs recorded.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-bd-t">
+                    {logs.slice(0, 8).map((l, i) => (
+                      <div
+                        key={l.id || i}
+                        onClick={() => handleNotificationClick(l.message)}
+                        className="px-4 py-3 hover:bg-bg-s transition-colors text-xs cursor-pointer select-none"
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="font-bold text-tx-p uppercase tracking-wider text-[9px] bg-bg-t px-1.5 py-0.5 rounded">
+                            {l.channel}
+                          </span>
+                          <span className="text-tx-s">{l.timestamp}</span>
+                        </div>
+                        <p className="text-tx-s leading-relaxed font-medium mt-1 hover:text-primary transition-colors">{l.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Profile dropdown */}
         <div className="relative" ref={profileRef}>
@@ -232,7 +325,12 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <div className="px-4 py-3 border-b border-bd-t">
                   <p className="text-sm font-semibold text-tx-p truncate">{roleDetails.userName}</p>
-                  <p className="text-xs text-tx-s mt-0.5">{roleDetails.name}</p>
+                  <p className="text-xs text-tx-s mt-0.5">{roleDetails.userEmail || roleDetails.name}</p>
+                  {roleDetails.userPosition && (
+                    <span className="inline-flex text-[9px] font-bold text-primary bg-bg-t px-1.5 py-0.5 rounded tracking-wide uppercase mt-1">
+                      {roleDetails.userPosition}
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => {

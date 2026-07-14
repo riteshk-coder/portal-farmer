@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, Base, engine
 from app.core.security import hash_password
 from app.models.user import User, Fpo, Buyer, RoleType
+from app.models.farmer import Farmer
 from app.models.lot import Lot, LotMatch, LotStatus
 from app.models.quote import Quote, QuoteStatus, CounterBy
 from app.models.contract import Contract, ContractStatus, EscrowStatus
@@ -47,6 +48,22 @@ def seed_db():
     fpo3 = Fpo(id=3, name="Salem Farmers FPO", location="Salem, TN", members_count=98, grade_conformance="92%", rating="4.4 / 5.0")
     fpo4 = Fpo(id=4, name="Erode Agro FPO", location="Erode, TN", members_count=110, grade_conformance="91%", rating="4.1 / 5.0")
     db.add_all([fpo1, fpo2, fpo3, fpo4])
+    db.commit()
+
+    print("Seeding FPO member farmers...")
+    fpo_farmers = [
+        Farmer(fpo_id=1, name="Ramesh Patil"),
+        Farmer(fpo_id=1, name="Suresh Jadhav"),
+        Farmer(fpo_id=1, name="Priya Kulkarni"),
+        Farmer(fpo_id=1, name="Ganesh More"),
+        Farmer(fpo_id=2, name="Arjun Singh"),
+        Farmer(fpo_id=2, name="Vijay Pawar"),
+        Farmer(fpo_id=3, name="M. Karthik"),
+        Farmer(fpo_id=3, name="S. Ramasamy"),
+        Farmer(fpo_id=4, name="P. Selvam"),
+        Farmer(fpo_id=4, name="R. Swaminathan"),
+    ]
+    db.add_all(fpo_farmers)
     db.commit()
 
     print("Seeding Buyer profiles...")
@@ -146,6 +163,13 @@ def seed_db():
     db.add_all([log1, log2, log3])
     db.commit()
     
+    from sqlalchemy import text
+    if "postgresql" in engine.name:
+        db.execute(text("SELECT setval('buyers_id_seq', COALESCE((SELECT MAX(id) FROM buyers), 1))"))
+        db.execute(text("SELECT setval('fpos_id_seq', COALESCE((SELECT MAX(id) FROM fpos), 1))"))
+        db.execute(text("SELECT setval('users_id_seq', COALESCE((SELECT MAX(id) FROM users), 1))"))
+        db.commit()
+        
     print("Database seeding completed successfully!")
     db.close()
 

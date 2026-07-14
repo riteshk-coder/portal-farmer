@@ -32,6 +32,8 @@ class Contract(Base):
     gst_invoice = Column(String, nullable=True)
     grn_number = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     lot = relationship("Lot")
     buyer = relationship("Buyer")
     fpo = relationship("Fpo")

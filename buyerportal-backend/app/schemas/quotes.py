@@ -30,3 +30,8 @@ class QuoteResponse(BaseSchema):
     @field_serializer("price", "qty")
     def serialize_numeric(self, val: float) -> float:
         return float(val)
+
+# Backward-compatible aliases
+QuoteCreate = QuoteCreateRequest
+QuoteResponseAction = QuoteRespondRequest
+BuyerCounter = QuoteCounterRequest

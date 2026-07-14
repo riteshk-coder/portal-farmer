@@ -23,5 +23,7 @@ class Dispute(Base):
     description = Column(Text)
     status = Column(SAEnum(DisputeStatus), default=DisputeStatus.review)
     filed_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     buyer = relationship("Buyer")
     fpo = relationship("Fpo")

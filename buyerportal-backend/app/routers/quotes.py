@@ -7,7 +7,7 @@ from app.models.user import User, RoleType
 from app.models.quote import Quote, QuoteStatus, CounterBy
 from app.models.lot import Lot, LotStatus
 from app.models.contract import Contract, ContractStatus, EscrowStatus
-from app.schemas.quote import QuoteCreate, QuoteResponse, QuoteResponseAction, BuyerCounter
+from app.schemas.quotes import QuoteCreate, QuoteResponse, QuoteResponseAction, BuyerCounter
 from app.services.notification_service import log_notification, NotificationChannel
 from app.core.config import settings
 import random
@@ -28,26 +28,39 @@ def quote_to_dict(q: Quote) -> dict:
         "counterRounds": q.counter_rounds
     }
 
+from datetime import datetime, timedelta
+
 @router.get("", response_model=List[QuoteResponse])
-def get_quotes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_quotes(
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(Quote)
     if current_user.role_type == RoleType.fpo:
-        quotes = db.query(Quote).join(Lot).filter(Lot.fpo_id == current_user.fpo_id).all()
+        query = query.join(Lot).filter(Lot.fpo_id == current_user.fpo_id)
     elif current_user.role_type == RoleType.buyer:
-        quotes = db.query(Quote).filter(Quote.buyer_id == current_user.buyer_id).all()
-    else:
-        quotes = db.query(Quote).all()
+        query = query.filter(Quote.buyer_id == current_user.buyer_id)
+    quotes = query.limit(limit).offset(offset).all()
     return [quote_to_dict(q) for q in quotes]
 
 @router.post("", response_model=QuoteResponse)
 def submit_quote(body: QuoteCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role("buyer"))):
-    lot = db.query(Lot).filter(Lot.id == body.lotId).first()
+    lot = db.query(Lot).filter(Lot.id == body.lot_id).first()
     if not lot:
         raise HTTPException(status_code=404, detail="Lot not found")
     
+    # Enforce 48-hour quote window check
+    now = datetime.utcnow()
+    lot_created = lot.created_at.replace(tzinfo=None) if lot.created_at else now
+    if now - lot_created > timedelta(hours=settings.QUOTE_WINDOW_HRS):
+        raise HTTPException(status_code=409, detail="Quote submission window has expired for this lot")
+        
     quote_id = f"QT-{random.randint(200, 300)}"
     new_quote = Quote(
         id=quote_id,
-        lot_id=body.lotId,
+        lot_id=body.lot_id,
         buyer_id=current_user.buyer_id,
         price=body.price,
         qty=body.qty,
@@ -67,28 +80,34 @@ def respond_quote(quote_id: str, body: QuoteResponseAction, db: Session = Depend
         raise HTTPException(status_code=404, detail="Quote not found")
 
     if body.action == "accept":
-        quote.status = QuoteStatus.accepted
-        lot = db.query(Lot).filter(Lot.id == quote.lot_id).first()
-        if lot:
-            lot.status = LotStatus.matched
+        # Wrap everything in a transaction block
+        try:
+            quote.status = QuoteStatus.accepted
+            lot = db.query(Lot).filter(Lot.id == quote.lot_id).first()
+            if lot:
+                lot.status = LotStatus.matched
 
-        # Auto-create contract
-        contract_id = f"CNT-{random.randint(100, 200):04d}"
-        contract = Contract(
-            id=contract_id,
-            lot_id=quote.lot_id,
-            buyer_id=quote.buyer_id,
-            fpo_id=lot.fpo_id if lot else current_user.fpo_id,
-            qty=quote.qty,
-            price=quote.price,
-            amount=round((quote.qty * quote.price * 1000) / 100000.0, 2),  # in Lakhs
-            status=ContractStatus.esign_pending,
-            fpo_signed=True,  # FPO eSigned instantly upon acceptance
-            buyer_signed=False,
-            escrow_status=EscrowStatus.pending_deposit
-        )
-        db.add(contract)
-        db.commit()
+            # Auto-create contract
+            contract_id = f"CNT-{random.randint(100, 200):04d}"
+            contract = Contract(
+                id=contract_id,
+                lot_id=quote.lot_id,
+                buyer_id=quote.buyer_id,
+                fpo_id=lot.fpo_id if lot else current_user.fpo_id,
+                qty=quote.qty,
+                price=quote.price,
+                amount=round((quote.qty * quote.price * 1000) / 100000.0, 2),  # in Lakhs
+                status=ContractStatus.esign_pending,
+                fpo_signed=True,  # FPO eSigned instantly upon acceptance
+                buyer_signed=False,
+                escrow_status=EscrowStatus.pending_deposit,
+                updated_by=current_user.id
+            )
+            db.add(contract)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to generate contract: {str(e)}")
 
         # Log Contract Upload log
         log_notification(
@@ -106,12 +125,12 @@ def respond_quote(quote_id: str, body: QuoteResponseAction, db: Session = Depend
         return {"status": "rejected"}
 
     elif body.action == "counter":
-        if not body.counterPrice:
-            raise HTTPException(status_code=400, detail="counterPrice required for counter action")
+        if not body.counter_price:
+            raise HTTPException(status_code=400, detail="counter_price required for counter action")
         if quote.counter_rounds >= settings.MAX_COUNTER_ROUNDS:
             raise HTTPException(status_code=409, detail=f"Maximum {settings.MAX_COUNTER_ROUNDS} counter rounds reached")
         
-        quote.price = body.counterPrice
+        quote.price = body.counter_price
         quote.status = QuoteStatus.counter_offer
         quote.counter_by = CounterBy.fpo
         quote.counter_rounds += 1
@@ -120,7 +139,7 @@ def respond_quote(quote_id: str, body: QuoteResponseAction, db: Session = Depend
         if lot:
             lot.status = LotStatus.counter_offer
         db.commit()
-        return {"status": "counter-sent", "newPrice": body.counterPrice}
+        return {"status": "counter-sent", "newPrice": body.counter_price}
 
     raise HTTPException(status_code=400, detail="Invalid action")
 

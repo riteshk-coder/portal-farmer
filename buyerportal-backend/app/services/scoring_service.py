@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models.user import Buyer
+from app.models.user import Buyer, Fpo
 
 def recalculate_buyer_score(buyer: Buyer, db: Session, action: str):
     """
@@ -12,4 +12,7 @@ def recalculate_buyer_score(buyer: Buyer, db: Session, action: str):
         buyer.reliability_score = max(50, buyer.reliability_score - 5)
     elif action == "dispute_lost":
         buyer.reliability_score = max(40, buyer.reliability_score - 10)
-    db.commit()
+
+def recalculate_fpo_score(fpo: Fpo, db: Session, action: str):
+    if action == "successful_delivery":
+        fpo.reliability_score = min(100, fpo.reliability_score + 2)

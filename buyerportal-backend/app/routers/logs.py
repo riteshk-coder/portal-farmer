@@ -11,7 +11,7 @@ router = APIRouter(prefix="/logs", tags=["logs"])
 @router.get("")
 def list_logs(
     channel: Optional[str] = None,
-    limit: int = 100, offset: int = 0,
+    limit: int = 50, offset: int = 0,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

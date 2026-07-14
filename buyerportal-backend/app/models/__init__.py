@@ -1,5 +1,6 @@
 from app.core.database import Base
-from app.models.user import User, Fpo, Buyer, RoleType
+from app.models.farmer import Farmer
+from app.models.user import User, Fpo, Buyer, RoleType, Consultant, AdminInvite
 from app.models.lot import Lot, LotMatch, LotStatus
 from app.models.quote import Quote, QuoteStatus, CounterBy
 from app.models.contract import Contract, ContractStatus, EscrowStatus

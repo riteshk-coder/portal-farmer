@@ -32,3 +32,11 @@ class RoleResponse(BaseSchema):
     def serialize_created_at(self, dt: datetime) -> str:
         # Format as e.g. "Jun 30, 2026" to match frontend format: "Jan 1, 2024"
         return dt.strftime("%b %d, %Y")
+
+class PermissionsUpdate(BaseSchema):
+    permissions: Dict[str, Dict[str, bool]]
+
+# Backward-compatible aliases
+RoleCreate = RoleCreateRequest
+RoleUpdate = RoleUpdateRequest
+SystemRoleResponse = RoleResponse

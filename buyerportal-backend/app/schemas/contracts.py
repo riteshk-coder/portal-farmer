@@ -32,3 +32,6 @@ class ContractResponse(BaseSchema):
         # Convert total ₹ value from DB to Lakhs (₹ / 100,000) for the frontend response
         return float(amount) / 100000.0
 
+# Backward-compatible aliases
+SignRequest = ContractSignRequest
+

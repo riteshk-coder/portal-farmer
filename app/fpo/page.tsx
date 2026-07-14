@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useApp } from "@/context/AppContext";
+import { cn } from "@/lib/utils";
+import { useApp, Dispute } from "@/context/AppContext";
 import { DashboardShell } from "@/components/DashboardShell";
 import { Card } from "@/components/Card";
 import { Pill } from "@/components/Pill";
@@ -31,6 +32,9 @@ export default function FpoDashboard() {
     openModal,
     showToast,
     respondToQuote,
+    logs,
+    disputes,
+    fileDispute,
   } = useApp();
 
   // Ensure role is synchronized
@@ -92,10 +96,10 @@ export default function FpoDashboard() {
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <KpiCard label="Active lots" value="7" sub="This week" trend="up" trendValue="+2" icon={<IconPackage className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" />
-          <KpiCard label="Pending quotes" value="4" sub="2 counter-offers" trend="neutral" trendValue="Active" icon={<IconReceipt className="w-5 h-5" />} accentColor="#F59E0B" iconBg="#FFFBEB" />
-          <KpiCard label="Dispatched" value="3" sub="In transit" trend="up" trendValue="On track" icon={<IconTruck className="w-5 h-5" />} accentColor="#6366F1" iconBg="#EEF2FF" />
-          <KpiCard label="Payout due" value="₹4.2L" sub="Est. this month" trend="up" trendValue="+12%" icon={<IconWallet className="w-5 h-5" />} accentColor="#22C55E" iconBg="#F0FDF4" />
+          <KpiCard label="Active lots" value="7" sub="This week" trend="up" trendValue="+2" icon={<IconPackage className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" onClick={() => setActiveTabForRole("fpo", "My lots")} />
+          <KpiCard label="Pending quotes" value="4" sub="2 counter-offers" trend="neutral" trendValue="Active" icon={<IconReceipt className="w-5 h-5" />} accentColor="#F59E0B" iconBg="#FFFBEB" onClick={() => setActiveTabForRole("fpo", "Quotes")} />
+          <KpiCard label="Dispatched" value="3" sub="In transit" trend="up" trendValue="On track" icon={<IconTruck className="w-5 h-5" />} accentColor="#6366F1" iconBg="#EEF2FF" onClick={() => setActiveTabForRole("fpo", "Contracts")} />
+          <KpiCard label="Payout due" value="₹4.2L" sub="Est. this month" trend="up" trendValue="+12%" icon={<IconWallet className="w-5 h-5" />} accentColor="#22C55E" iconBg="#F0FDF4" onClick={() => setActiveTabForRole("fpo", "Payouts")} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -150,17 +154,23 @@ export default function FpoDashboard() {
 
             {/* Notifications */}
             <Card title="Recent notifications">
-              <div className="space-y-3 text-[12px] font-semibold">
-                {[
-                  { msg: "LOT-2841 matched with 3 buyers", time: "10 min ago", color: "bg-teal-accent" },
-                  { msg: "Counter-offer received on LOT-2844", time: "1 hr ago", color: "bg-amb" },
-                  { msg: "₹4.2L payout scheduled for 25 Jun", time: "2 hr ago", color: "bg-teal-accent" },
-                ].map((notif, idx) => (
+              <div className="space-y-3.5 text-[12px] font-semibold">
+                {(logs && logs.length > 0
+                  ? logs.filter(l => l.recipient.includes("FPO") || l.channel === "System")
+                  : [
+                      { message: "LOT-2841 matched with 3 buyers", timestamp: "10 min ago", channel: "System" },
+                      { message: "Counter-offer received on LOT-2844", timestamp: "1 hr ago", channel: "SMS" },
+                      { message: "₹4.2L payout scheduled for 25 Jun", timestamp: "2 hr ago", channel: "System" }
+                    ]
+                ).slice(0, 4).map((notif, idx) => (
                   <div key={idx} className="flex gap-2.5 items-start">
-                    <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${notif.color}`} />
+                    <div className={cn(
+                      "w-2 h-2 rounded-full shrink-0 mt-1.5",
+                      notif.channel === "System" ? "bg-teal-accent" : "bg-amb"
+                    )} />
                     <div>
-                      <div className="text-tx-p leading-none">{notif.msg}</div>
-                      <div className="text-[10px] text-tx-t mt-1">{notif.time}</div>
+                      <div className="text-tx-p leading-tight">{notif.message}</div>
+                      <div className="text-[10px] text-tx-t mt-1">{notif.timestamp}</div>
                     </div>
                   </div>
                 ))}
@@ -232,6 +242,13 @@ export default function FpoDashboard() {
 
     return (
       <div className="space-y-4 animate-fade-in">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("fpo", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
         <div className="flex justify-between items-center mb-4">
           <div className="page-hd !mb-0">
             <div className="page-title">Commodity Lots Registry</div>
@@ -263,6 +280,13 @@ export default function FpoDashboard() {
   const renderUploadLot = () => {
     return (
       <div className="space-y-4 animate-fade-in">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("fpo", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
         {/* Page Header */}
         <div className="page-hd">
           <div className="page-title">Upload lot</div>
@@ -583,6 +607,13 @@ export default function FpoDashboard() {
 
     return (
       <div className="space-y-4 animate-fade-in">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("fpo", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
         <div className="page-hd">
           <div className="page-title">Incoming Buyer Quotes</div>
           <div className="page-sub">Review and accept bids or send counters to verified buyers</div>
@@ -673,6 +704,13 @@ export default function FpoDashboard() {
 
     return (
       <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("fpo", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
         <div className="page-hd">
           <div className="page-title">Payouts</div>
           <div className="page-sub">Farmer split payments from escrow</div>
@@ -703,6 +741,91 @@ export default function FpoDashboard() {
     );
   };
 
+  const renderDisputes = () => {
+    const fpoDisputes = disputes.filter((d) => d.fpoName === "Nashik Agro FPO");
+
+    const handleFileDispute = (e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.currentTarget as HTMLFormElement;
+      const type = (form.elements.namedItem("disputeType") as HTMLSelectElement).value as Dispute["type"];
+      const lotId = (form.elements.namedItem("lotId") as HTMLSelectElement).value;
+      const desc = (form.elements.namedItem("description") as HTMLTextAreaElement).value;
+      
+      if (!lotId || !desc) {
+        showToast("Please fill in all fields to file complaint.", "error");
+        return;
+      }
+      fileDispute(type, lotId, desc);
+      form.reset();
+    };
+
+    const columns = [
+      { header: "Case ID", render: (item: any) => <span className="font-mono font-bold text-tx-p">{item.id}</span> },
+      { header: "Type", render: (item: any) => <span className="text-cor font-bold">{item.type}</span> },
+      { header: "Lot ID", render: (item: any) => <span className="font-mono text-tx-s">{item.lotId}</span> },
+      { header: "Buyer", render: (item: any) => <span className="font-semibold text-tx-p">{item.buyerName}</span> },
+      { header: "Summary", render: (item: any) => <span className="text-tx-s">{item.description}</span> },
+      { header: "Status", render: (item: any) => <Pill status={item.status} /> },
+    ];
+
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <button
+          type="button"
+          onClick={() => setActiveTabForRole("fpo", "Overview")}
+          className="flex items-center gap-1 text-tx-s hover:text-tx-p font-semibold text-xs transition-colors w-fit mb-2"
+        >
+          &larr; Back to Overview
+        </button>
+        <PageHeader title="Disputes & Complaints" subtitle="File quality conformance or payment hold disputes with MahaFPC Regulator" />
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="lg:col-span-4">
+            <Card title="File New Dispute">
+              <form onSubmit={handleFileDispute} className="space-y-4 text-[12px] font-semibold">
+                <div>
+                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Dispute Category</label>
+                  <select name="disputeType" className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m">
+                    <option value="Quality mismatch">Quality mismatch</option>
+                    <option value="Payment delay">Payment delay</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Select Lot ID</label>
+                  <select name="lotId" className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m">
+                    {lots.map((l) => (
+                      <option key={l.id} value={l.id}>{l.id} &middot; {l.description}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Detailed Complaint Summary</label>
+                  <textarea
+                    name="description"
+                    rows={4}
+                    placeholder="Provide details about quality report differences or unpaid escrow holds..."
+                    className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m"
+                    required
+                  />
+                </div>
+
+                <Button type="submit" className="w-full">File Dispute with MahaFPC</Button>
+              </form>
+            </Card>
+          </div>
+
+          <div className="lg:col-span-8">
+            <Card title="Dispute Log & Case Status" subtitle="Ongoing quality disputes and regulatory resolutions">
+              <DataTable columns={columns} data={fpoDisputes} emptyMessage="No disputes filed by your FPO." />
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <DashboardShell>
       {activeTab === "Overview" && renderOverview()}
@@ -712,6 +835,7 @@ export default function FpoDashboard() {
       {activeTab === "Quotes" && renderQuotes()}
       {activeTab === "Contracts" && renderContracts()}
       {activeTab === "Payouts" && renderPayouts()}
+      {activeTab === "Disputes" && renderDisputes()}
     </DashboardShell>
   );
 }

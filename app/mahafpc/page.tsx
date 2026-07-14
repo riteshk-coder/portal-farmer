@@ -37,6 +37,7 @@ export default function MahaFpcDashboard() {
     contracts,
     disputes,
     resolveDispute,
+    updateDisputeStatus,
   } = useApp();
 
   // Ensure role is synchronized
@@ -74,13 +75,13 @@ export default function MahaFpcDashboard() {
         />
 
         {/* KPI Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          <KpiCard label="Total Transactions" value="148" sub="↑ 12 this week" trend="up" trendValue="+12" icon={<IconExchange className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" />
-          <KpiCard label="Volume (MT)" value="2,340" sub="Turmeric traded" trend="up" trendValue="+340" icon={<IconPackage className="w-5 h-5" />} accentColor="#4F46E5" iconBg="#EEF2FF" />
-          <KpiCard label="GMV" value="₹3.1Cr" sub="Season to date" trend="up" trendValue="+8%" icon={<IconChartBar className="w-5 h-5" />} accentColor="#16A34A" iconBg="#F0FDF4" />
-          <KpiCard label="Open Disputes" value="2" sub="Pending review" trend="down" trendValue="2 open" icon={<IconAlertTriangle className="w-5 h-5" />} accentColor="#DC2626" iconBg="#FEF2F2" />
-          <KpiCard label="Active FPOs" value="18" sub="Registered" trend="neutral" trendValue="Stable" icon={<IconUsers className="w-5 h-5" />} accentColor="#D97706" iconBg="#FFF7ED" />
-          <KpiCard label="Active Buyers" value="41" sub="Verified" trend="up" trendValue="+3" icon={<IconUserCheck className="w-5 h-5" />} accentColor="#7C3AED" iconBg="#F5F3FF" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <KpiCard label="Total Transactions" value="148" sub="↑ 12 this week" trend="up" trendValue="+12" icon={<IconExchange className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" onClick={() => setActiveTabForRole("mahafpc", "All transactions")} />
+          <KpiCard label="Volume (MT)" value="2,340" sub="Turmeric traded" trend="up" trendValue="+340" icon={<IconPackage className="w-5 h-5" />} accentColor="#4F46E5" iconBg="#EEF2FF" onClick={() => setActiveTabForRole("mahafpc", "Reports")} />
+          <KpiCard label="GMV" value="₹3.1Cr" sub="Season to date" trend="up" trendValue="+8%" icon={<IconChartBar className="w-5 h-5" />} accentColor="#16A34A" iconBg="#F0FDF4" onClick={() => setActiveTabForRole("mahafpc", "Reports")} />
+          <KpiCard label="Open Disputes" value="2" sub="Pending review" trend="down" trendValue="2 open" icon={<IconAlertTriangle className="w-5 h-5" />} accentColor="#DC2626" iconBg="#FEF2F2" onClick={() => setActiveTabForRole("mahafpc", "Disputes")} />
+          <KpiCard label="Active FPOs" value="18" sub="Registered" trend="neutral" trendValue="Stable" icon={<IconUsers className="w-5 h-5" />} accentColor="#D97706" iconBg="#FFF7ED" onClick={() => setActiveTabForRole("mahafpc", "FPO ratings")} />
+          <KpiCard label="Active Buyers" value="41" sub="Verified" trend="up" trendValue="+3" icon={<IconUserCheck className="w-5 h-5" />} accentColor="#7C3AED" iconBg="#F5F3FF" onClick={() => setActiveTabForRole("mahafpc", "Buyer scores")} />
         </div>
 
         {/* Content rows */}
@@ -411,17 +412,19 @@ export default function MahaFpcDashboard() {
       {
         header: "Action",
         render: (item: any) => {
-          if (item.status !== "Resolved") {
-            return (
-              <button
-                onClick={() => resolveDispute(item.id)}
-                className="px-2.5 py-0.5 text-[11px] font-bold text-white bg-pur hover:bg-pur-m rounded-sm transition-all"
-              >
-                Resolve
-              </button>
-            );
-          }
-          return <span className="text-[11px] text-teal-accent font-bold">Arbitrated</span>;
+          return (
+            <select
+              value={item.status}
+              onChange={(e) => updateDisputeStatus(item.id, e.target.value as any)}
+              className="bg-bg-p border border-bd-s rounded px-2 py-1 text-[11px] font-bold text-tx-p focus:outline-none focus:border-pur"
+            >
+              <option value="Review">Review</option>
+              <option value="Pending">Pending</option>
+              <option value="In progress">In progress</option>
+              <option value="Resolved">Resolved</option>
+              <option value="Not resolved">Not resolved</option>
+            </select>
+          );
         },
       },
     ];

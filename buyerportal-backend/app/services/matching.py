@@ -1,97 +1,75 @@
-import random
-from decimal import Decimal
+import logging
 from sqlalchemy.orm import Session
-from app.models.trade import Lot, LotMatch, Buyer
-from app.models.ops import SystemLog
+from app.models.lot import Lot, LotMatch
+from app.models.user import Buyer
+
+logger = logging.getLogger(__name__)
+
+# Centralized configurable weights for the rule-based matcher formula
+CONFIG_WEIGHTS = {
+    "commodity_weight": 0.4,
+    "proximity_weight": 0.3,
+    "reliability_weight": 0.3
+}
 
 def calculate_match_score(lot: Lot, buyer: Buyer) -> int:
-    """Calculate a matching score (0-100) based on location and simulated parameters."""
-    # Commodity match: assume high compatibility for the demo (80-95)
-    commodity_score = random.randint(85, 95)
+    """
+    Calculate a match score (0-100) using a weighted rule-based formula.
+    """
+    # 1. Commodity match (default to high base score 90 since all platform buyers buy turmeric)
+    commodity_score = 90
+    lot_desc = (lot.description or "").lower()
     
-    # Distance match: if locations are in the same state, higher score
-    lot_state = lot.location.split(",")[-1].strip() if "," in lot.location else lot.location
-    buyer_state = buyer.location.split(",")[-1].strip() if "," in buyer.location else buyer.location
-    
-    if lot_state == buyer_state:
-        distance_score = random.randint(90, 100)
-    else:
-        distance_score = random.randint(65, 80)
-        
-    # Buyer reliability score (simulated based on name)
-    reliability_scores = {
-        "R.K. Traders Pvt. Ltd": 92,
-        "Spice Exports Ltd": 88,
-        "Agmark Foods": 82,
-        "NutriTrade Co.": 80
-    }
-    reliability_score = reliability_scores.get(buyer.name, random.randint(70, 85))
-    
-    # Weighted score: 40% commodity, 30% distance, 30% reliability
-    score = int(0.4 * commodity_score + 0.3 * distance_score + 0.3 * reliability_score)
-    return min(100, max(0, score))
+    # Simple keyword heuristic check
+    if "premium" in lot_desc and buyer.reliability_score >= 85:
+        commodity_score = 95
+    elif "low" in lot_desc or "grade b" in lot_desc.lower():
+        commodity_score = 80
 
-def run_matching_simulation(db: Session, lot_id: str):
-    """Run matching for a new Lot and create LotMatch records and system logs."""
-    lot = db.query(Lot).filter(Lot.id == lot_id).first()
-    if not lot:
-        return
-        
-    # Get all buyers
-    buyers = db.query(Buyer).all()
-    if not buyers:
-        return
-        
-    # Generate matches
-    matches_created = []
+    # 2. Geographic Proximity: Same state gets 100, different states get 60
+    lot_state = lot.location.split(",")[-1].strip().lower() if lot.location and "," in lot.location else (lot.location or "").lower()
+    buyer_state = "maharashtra"  # Assume default state for local buyers if location missing
+    
+    # Extract state from buyer if we can
+    # (Since Buyer model has location we can parse it similarly)
+    buyer_location = getattr(buyer, "location", "Maharashtra") or "Maharashtra"
+    buyer_state = buyer_location.split(",")[-1].strip().lower() if "," in buyer_location else buyer_location.lower()
+    
+    if lot_state and buyer_state and (lot_state in buyer_state or buyer_state in lot_state):
+        proximity_score = 100
+    else:
+        proximity_score = 60
+
+    # 3. Buyer Reliability: Use the actual reliability score from the database (default to 80 if null)
+    reliability_score = buyer.reliability_score if buyer.reliability_score is not None else 80
+
+    # Apply weighted formula
+    w_comm = CONFIG_WEIGHTS["commodity_weight"]
+    w_prox = CONFIG_WEIGHTS["proximity_weight"]
+    w_rel = CONFIG_WEIGHTS["reliability_weight"]
+
+    final_score = int((commodity_score * w_comm) + (proximity_score * w_prox) + (reliability_score * w_rel))
+    return min(100, max(0, final_score))
+
+def run_rule_based_matching(lot: Lot, buyers: list[Buyer]) -> list[LotMatch]:
+    """
+    Execute rule-based matching score generation for all candidate buyers.
+    Does not write to database; returns list of scored LotMatch objects.
+    """
+    matches = []
     for buyer in buyers:
         score = calculate_match_score(lot, buyer)
-        # Only create a match if score is reasonably high (e.g. > 70)
-        if score >= 70:
-            # Offered price is slightly lower than FPO price expectation (1-5% lower)
-            discount = Decimal(str(round(random.uniform(0.01, 0.05), 3)))
-            offered_price = lot.price_expectation * (Decimal("1.00") - discount)
-            
-            match = LotMatch(
-                lot_id=lot.id,
-                buyer_id=buyer.id,
-                match_score=score,
-                offered_price=round(offered_price, 2)
-            )
-            db.add(match)
-            matches_created.append(match)
-            
-    db.commit()
-    
-    # Update Lot status if matches are found
-    if matches_created:
-        lot.status = "Matched"
-        db.add(lot)
-        db.commit()
         
-        # Sort matches by score for the log
-        matches_created.sort(key=lambda x: x.match_score, reverse=True)
-        top_match = matches_created[0]
-        top_buyer = db.query(Buyer).filter(Buyer.id == top_match.buyer_id).first()
+        # Offered price is slightly lower than FPO price expectation (e.g. 4% discount)
+        offered_price = round(lot.price_expectation * 0.96, 2)
         
-        # Write system logs (System + WhatsApp + Email) to match the demo trail
-        log1 = SystemLog(
-            id=f"LOG-{random.randint(10000, 99999)}",
-            channel="System",
-            recipient="AI Matching Core",
-            message=f"Scanning buyers for {lot.id} ({lot.qty} MT, {lot.grade}) with price expectation ₹{lot.price_expectation}/kg."
+        match = LotMatch(
+            lot_id=lot.id,
+            buyer_id=buyer.id,
+            match_score=score,
+            offered_price=offered_price,
+            matching_path="rule-based"
         )
-        log2 = SystemLog(
-            id=f"LOG-{random.randint(10000, 99999)}",
-            channel="WhatsApp",
-            recipient=f"+91 99000 12345 ({lot.fpo.name if lot.fpo else 'FPO'})",
-            message=f"AI Matching Complete for {lot.id}: {len(matches_created)} buyers matching > 70% found. Top match: {top_buyer.name if top_buyer else 'Buyer'} with {top_match.match_score}% score."
-        )
-        log3 = SystemLog(
-            id=f"LOG-{random.randint(10000, 99999)}",
-            channel="Email",
-            recipient=f"purchase@{top_buyer.id.lower() if top_buyer else 'buyer'}.in",
-            message=f"Alert: New lot {lot.id} meets your procurement requirements. Expected price: ₹{lot.price_expectation}/kg."
-        )
-        db.add_all([log1, log2, log3])
-        db.commit()
+        matches.append(match)
+        
+    return matches

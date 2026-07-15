@@ -43,75 +43,109 @@ export default function BuyerDashboard() {
   // Views rendering
   const renderOverview = () => {
     const unsignedContracts = contracts.filter((c) => !c.buyerSigned);
+    const alertLots = lots.filter((l) => l.status === "Pending match" || l.status === "Matched" || l.status === "Quoting");
 
     return (
       <div className="space-y-6">
         <PageHeader title="Overview" subtitle="Procurement alerts, quotes, escrow, and goods receipt" />
 
+        {/* Onboarding Banner for New Users */}
+        {lots.length === 0 && (
+          <div className="bg-gradient-to-r from-teal-bg to-bg-s border border-primary/20 rounded-2xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
+                <span>Welcome to Buyer Portal Onboarding!</span>
+              </h3>
+              <p className="text-xs text-tx-s max-w-2xl leading-relaxed">
+                Logically, first-time users have zero active trade transactions. We have prepared an onboarding guide explaining how to browse lots, submit quotes, deposit escrow, and confirm delivery.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => openModal("user-guide")}
+              className="text-xs font-semibold px-4 whitespace-nowrap"
+            >
+              Open Quick Start Guide
+            </Button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <KpiCard label="New lot alerts" value="9" sub="3 via WhatsApp" trend="up" trendValue="+3" icon={<IconBell className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" onClick={() => setActiveTabForRole("buyer", "Lot alerts")} />
-          <KpiCard label="Active quotes" value="3" sub="1 counter pending" trend="neutral" trendValue="Active" icon={<IconReceipt className="w-5 h-5" />} accentColor="#F59E0B" iconBg="#FFFBEB" onClick={() => setActiveTabForRole("buyer", "My quotes")} />
-          <KpiCard label="Escrow funded" value="₹11L" sub="2 contracts" trend="up" trendValue="+₹2L" icon={<IconShieldLock className="w-5 h-5" />} accentColor="#6366F1" iconBg="#EEF2FF" onClick={() => setActiveTabForRole("buyer", "Escrow")} />
-          <KpiCard label="GRN pending" value="1" sub="Delivery today" trend="down" trendValue="Urgent" icon={<IconTruck className="w-5 h-5" />} accentColor="#EF4444" iconBg="#FEF2F2" onClick={() => setActiveTabForRole("buyer", "Issue GRN")} />
+          <KpiCard
+            label="New lot alerts"
+            value={alertLots.length.toString()}
+            sub="Live market listings"
+            trend="neutral"
+            trendValue="Active"
+            icon={<IconBell className="w-5 h-5" />}
+            accentColor="#0F766E"
+            iconBg="#CCFBF1"
+            onClick={() => setActiveTabForRole("buyer", "Lot alerts")}
+          />
+          <KpiCard
+            label="Active quotes"
+            value={quotes.filter((q) => q.status === "Awaiting response" || q.status === "Counter-offer").length.toString()}
+            sub="Negotiations active"
+            trend="neutral"
+            trendValue="Active"
+            icon={<IconReceipt className="w-5 h-5" />}
+            accentColor="#F59E0B"
+            iconBg="#FFFBEB"
+            onClick={() => setActiveTabForRole("buyer", "My quotes")}
+          />
+          <KpiCard
+            label="Escrow funded"
+            value={`₹${contracts.filter((c) => c.escrowStatus === "Deposited").reduce((acc, c) => acc + c.amount, 0).toFixed(2)}L`}
+            sub="Locked funds"
+            trend="neutral"
+            trendValue="Secure"
+            icon={<IconShieldLock className="w-5 h-5" />}
+            accentColor="#6366F1"
+            iconBg="#EEF2FF"
+            onClick={() => setActiveTabForRole("buyer", "Escrow")}
+          />
+          <KpiCard
+            label="GRN pending"
+            value={contracts.filter((c) => c.status === "Signed" && c.escrowStatus === "Deposited" && !c.grnNumber).length.toString()}
+            sub="Awaiting delivery"
+            trend="neutral"
+            trendValue="Transit"
+            icon={<IconTruck className="w-5 h-5" />}
+            accentColor="#EF4444"
+            iconBg="#FEF2F2"
+            onClick={() => setActiveTabForRole("buyer", "Issue GRN")}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           <div className="lg:col-span-7 space-y-5">
             <Card title="Latest lot alerts">
               <div className="space-y-3">
-                {[
-                  { id: "LOT-2843", desc: "20 MT Nizamabad premium", price: "₹132/kg", time: "8 min ago · WhatsApp + Email", bid: true },
-                  { id: "LOT-2841", desc: "12 MT Erode A", price: "₹128/kg", time: "22 min ago · SMS", bid: false },
-                  { id: "LOT-2845", desc: "6 MT Erode B", price: "₹121/kg", time: "1 hr ago · Email", bid: false },
-                ].map((alert) => (
-                  <div key={alert.id} className="flex items-center justify-between py-2 border-b border-bd-t last:border-none text-[12px] font-semibold">
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-2 h-2 rounded-full mt-1.5 bg-teal-accent shrink-0" />
-                      <div>
-                        <div className="text-tx-p font-bold">{alert.id} &middot; {alert.desc} &middot; {alert.price}</div>
-                        <div className="text-[10px] text-tx-t mt-0.5">{alert.time}</div>
+                {alertLots.length === 0 ? (
+                  <div className="text-center py-8 text-tx-t text-xs font-semibold border border-dashed border-bd-t rounded-xl">
+                    No active lots listed in the market.
+                  </div>
+                ) : (
+                  alertLots.slice(0, 3).map((l) => (
+                    <div key={l.id} className="flex items-center justify-between py-2 border-b border-bd-t last:border-none text-[12px] font-semibold">
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-2 h-2 rounded-full mt-1.5 bg-teal-accent shrink-0" />
+                        <div>
+                          <div className="text-tx-p font-bold">
+                            {l.id} &middot; {l.qty} MT {l.description} &middot; ₹{l.priceExpectation}/kg
+                          </div>
+                          <div className="text-[10px] text-tx-t mt-0.5">Location: {l.location} &middot; Grade: {l.grade}</div>
+                        </div>
                       </div>
-                    </div>
-                    {alert.bid ? (
                       <button
-                        onClick={() => {
-                          const lot = lots.find(l => l.id === alert.id);
-                          if (lot) openModal("buyer-quote", { lot });
-                        }}
+                        onClick={() => openModal("buyer-lot-details", { lot: l })}
                         className="px-2.5 py-0.5 text-[11px] font-bold text-white bg-amb hover:bg-amb-m rounded transition-colors shrink-0"
                       >
-                        Quote
+                        Details
                       </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          const lot = lots.find((l) => l.id === alert.id);
-                          if (lot) {
-                            openModal("buyer-lot-details", { lot });
-                          } else {
-                            openModal("buyer-lot-details", {
-                              lot: {
-                                id: alert.id,
-                                description: alert.desc.replace(/^\d+\s+MT\s+/, ""),
-                                qty: parseInt(alert.desc) || 6,
-                                grade: alert.desc.includes("A") ? "A" : "B",
-                                status: "Matched",
-                                priceExpectation: parseInt(alert.price.replace(/[^\d]/g, "")) || 121,
-                                location: "Nashik, MH",
-                                fpoName: "Nashik Agro FPO",
-                                createdAt: "1 hour ago",
-                                notes: "Quality certified organic turmeric finger lot."
-                              }
-                            });
-                          }
-                        }}
-                        className="px-2.5 py-0.5 text-[11px] font-bold text-tx-s bg-bg-s border border-bd-t hover:bg-bg-t rounded transition-colors shrink-0"
-                      >
-                        View
-                      </button>
-                    )}
-                  </div>
-                ))}
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
 
@@ -121,20 +155,26 @@ export default function BuyerDashboard() {
           <div className="lg:col-span-5 space-y-5">
             <Card title="Awaiting signature">
               <div className="space-y-3">
-                {unsignedContracts.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between py-2 border-b border-bd-t last:border-none text-[12px] font-semibold">
-                    <div>
-                      <div className="text-tx-p font-bold">{c.id} &middot; {c.lotDescription} &middot; ₹{c.amount.toFixed(2)}L</div>
-                      <div className="text-[10px] text-cor font-bold uppercase mt-0.5">eSign Pending</div>
-                    </div>
-                    <button
-                      onClick={() => openModal("buyer-esign", { contract: c })}
-                      className="px-2.5 py-0.5 text-[11px] font-bold text-white bg-amb hover:bg-amb-m rounded transition-colors shrink-0"
-                    >
-                      Sign
-                    </button>
+                {unsignedContracts.length === 0 ? (
+                  <div className="text-center py-8 text-tx-t text-xs font-semibold border border-dashed border-bd-t rounded-xl">
+                    No contracts awaiting signature.
                   </div>
-                ))}
+                ) : (
+                  unsignedContracts.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between py-2 border-b border-bd-t last:border-none text-[12px] font-semibold">
+                      <div>
+                        <div className="text-tx-p font-bold">{c.id} &middot; {c.lotDescription} &middot; ₹{c.amount.toFixed(2)}L</div>
+                        <div className="text-[10px] text-cor font-bold uppercase mt-0.5">eSign Pending</div>
+                      </div>
+                      <button
+                        onClick={() => openModal("buyer-esign", { contract: c })}
+                        className="px-2.5 py-0.5 text-[11px] font-bold text-white bg-amb hover:bg-amb-m rounded transition-colors shrink-0"
+                      >
+                        Sign
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
 

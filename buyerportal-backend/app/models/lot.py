@@ -38,5 +38,6 @@ class LotMatch(Base):
     buyer_id = Column(Integer, ForeignKey("buyers.id"))
     match_score = Column(Integer)  # 0-100
     offered_price = Column(Float)
+    matching_path = Column(String, nullable=True) # "ai" or "rule-based"
     lot = relationship("Lot", back_populates="matches")
     buyer = relationship("Buyer")

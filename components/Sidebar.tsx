@@ -54,7 +54,7 @@ const getTabIcon = (tabName: string) => {
   if (t.includes("notification")) return <IconNotification className="w-5 h-5" />;
   if (t.includes("esign status")) return <IconChecks className="w-5 h-5" />;
   if (t.includes("release")) return <IconArrowUpRight className="w-5 h-5" />;
-  if (t.includes("farmer")) return <IconUsers className="w-5 h-5" />;
+  if (t.includes("farmer") || t.includes("directory") || t.includes("member")) return <IconUsers className="w-5 h-5" />;
   if (t.includes("ledger")) return <IconBook className="w-5 h-5" />;
   return <IconPackage className="w-5 h-5" />;
 };

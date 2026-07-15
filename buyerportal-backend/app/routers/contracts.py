@@ -121,9 +121,14 @@ def fund_escrow(
         if lot:
             lot.status = LotStatus.dispatched
 
-        # G12/Scoring: Timely deposit +2 score for buyer
+        # G12/Scoring: Timely deposit +2 score for buyer, late deposit -5
         if c.buyer:
-            recalculate_buyer_score(c.buyer, db, "timely_deposit")
+            created_at_naive = c.created_at.replace(tzinfo=None) if c.created_at else datetime.utcnow()
+            time_diff = datetime.utcnow() - created_at_naive
+            if time_diff.total_seconds() > 48 * 3600:
+                recalculate_buyer_score(c.buyer, db, "late_deposit")
+            else:
+                recalculate_buyer_score(c.buyer, db, "timely_deposit")
 
         c.updated_by = current_user.id
         c.updated_at = datetime.utcnow()

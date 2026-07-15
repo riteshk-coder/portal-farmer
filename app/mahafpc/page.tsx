@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { DashboardShell } from "@/components/DashboardShell";
 import { Card } from "@/components/Card";
@@ -47,6 +47,31 @@ export default function MahaFpcDashboard() {
 
   const activeTab = activeTabs.mahafpc || "Overview";
 
+  const [dirUsers, setDirUsers] = useState<any[]>([]);
+  const [dirFpos, setDirFpos] = useState<any[]>([]);
+  const [dirBuyers, setDirBuyers] = useState<any[]>([]);
+  const [selectedDirTab, setSelectedDirTab] = useState<"users" | "fpos" | "buyers">("users");
+
+  useEffect(() => {
+    const fetchDirectory = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("http://localhost:8000/auth/directory", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDirUsers(data.users || []);
+          setDirFpos(data.fpos || []);
+          setDirBuyers(data.buyers || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch directory:", err);
+      }
+    };
+    fetchDirectory();
+  }, [activeTab]);
+
   // Mock static scoring tables
   const buyerScores = [
     { rank: 1, name: "R.K. Traders", score: 98, paymentDays: "1.2 days", volume: "142 MT" },
@@ -66,6 +91,17 @@ export default function MahaFpcDashboard() {
   // Views rendering
   const renderOverview = () => {
     const activeDisputes = disputes.filter((d) => d.status !== "Resolved");
+    const totalVolume = lots.reduce((acc, curr) => acc + curr.qty, 0);
+    const totalGmvVal = contracts.reduce((acc, curr) => acc + curr.amount, 0);
+    const formattedGmv = totalGmvVal >= 100 
+      ? `₹${(totalGmvVal / 100).toFixed(2)}Cr` 
+      : `₹${totalGmvVal.toFixed(2)}L`;
+
+    const barChartData = dirBuyers.length > 0 
+      ? dirBuyers.slice(0, 5).map(b => ({ name: b.name.split(" ")[0], score: b.reliabilityScore }))
+      : [
+          { name: "No Buyers", score: 0 }
+        ];
 
     return (
       <div className="space-y-5 animate-fade-in">
@@ -76,12 +112,12 @@ export default function MahaFpcDashboard() {
 
         {/* KPI Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <KpiCard label="Total Transactions" value="148" sub="↑ 12 this week" trend="up" trendValue="+12" icon={<IconExchange className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" onClick={() => setActiveTabForRole("mahafpc", "All transactions")} />
-          <KpiCard label="Volume (MT)" value="2,340" sub="Turmeric traded" trend="up" trendValue="+340" icon={<IconPackage className="w-5 h-5" />} accentColor="#4F46E5" iconBg="#EEF2FF" onClick={() => setActiveTabForRole("mahafpc", "Reports")} />
-          <KpiCard label="GMV" value="₹3.1Cr" sub="Season to date" trend="up" trendValue="+8%" icon={<IconChartBar className="w-5 h-5" />} accentColor="#16A34A" iconBg="#F0FDF4" onClick={() => setActiveTabForRole("mahafpc", "Reports")} />
-          <KpiCard label="Open Disputes" value="2" sub="Pending review" trend="down" trendValue="2 open" icon={<IconAlertTriangle className="w-5 h-5" />} accentColor="#DC2626" iconBg="#FEF2F2" onClick={() => setActiveTabForRole("mahafpc", "Disputes")} />
-          <KpiCard label="Active FPOs" value="18" sub="Registered" trend="neutral" trendValue="Stable" icon={<IconUsers className="w-5 h-5" />} accentColor="#D97706" iconBg="#FFF7ED" onClick={() => setActiveTabForRole("mahafpc", "FPO ratings")} />
-          <KpiCard label="Active Buyers" value="41" sub="Verified" trend="up" trendValue="+3" icon={<IconUserCheck className="w-5 h-5" />} accentColor="#7C3AED" iconBg="#F5F3FF" onClick={() => setActiveTabForRole("mahafpc", "Buyer scores")} />
+          <KpiCard label="Total Transactions" value={contracts.length.toString()} sub="Contracts created" trend="neutral" trendValue="Active" icon={<IconExchange className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" onClick={() => setActiveTabForRole("mahafpc", "All transactions")} />
+          <KpiCard label="Volume (MT)" value={totalVolume.toLocaleString()} sub="Turmeric traded" trend="neutral" trendValue="Traded" icon={<IconPackage className="w-5 h-5" />} accentColor="#4F46E5" iconBg="#EEF2FF" onClick={() => setActiveTabForRole("mahafpc", "Reports")} />
+          <KpiCard label="GMV" value={formattedGmv} sub="Contract value" trend="neutral" trendValue="Valued" icon={<IconChartBar className="w-5 h-5" />} accentColor="#16A34A" iconBg="#F0FDF4" onClick={() => setActiveTabForRole("mahafpc", "Reports")} />
+          <KpiCard label="Open Disputes" value={activeDisputes.length.toString()} sub="Require mediation" trend={activeDisputes.length > 0 ? "down" : "neutral"} trendValue={activeDisputes.length > 0 ? `${activeDisputes.length} open` : "Clean"} icon={<IconAlertTriangle className="w-5 h-5" />} accentColor="#DC2626" iconBg="#FEF2F2" onClick={() => setActiveTabForRole("mahafpc", "Disputes")} />
+          <KpiCard label="Active FPOs" value={dirFpos.length.toString()} sub="Registered coop" trend="neutral" trendValue="Active" icon={<IconUsers className="w-5 h-5" />} accentColor="#D97706" iconBg="#FFF7ED" onClick={() => setActiveTabForRole("mahafpc", "FPO ratings")} />
+          <KpiCard label="Active Buyers" value={dirBuyers.length.toString()} sub="Verified access" trend="neutral" trendValue="Verified" icon={<IconUserCheck className="w-5 h-5" />} accentColor="#7C3AED" iconBg="#F5F3FF" onClick={() => setActiveTabForRole("mahafpc", "Buyer scores")} />
         </div>
 
         {/* Content rows */}
@@ -92,13 +128,7 @@ export default function MahaFpcDashboard() {
               <div className="h-[200px] mt-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={[
-                      { name: "R.K. Traders", score: 91 },
-                      { name: "Spice Exports", score: 85 },
-                      { name: "Agmark Foods", score: 72 },
-                      { name: "Nurture Foods", score: 68 },
-                      { name: "NutriTrade", score: 56 },
-                    ]}
+                    data={barChartData}
                     margin={{ top: 4, right: 16, left: -20, bottom: 4 }}
                     barSize={32}
                   >
@@ -508,6 +538,7 @@ export default function MahaFpcDashboard() {
   const [roleModalId, setRoleModalId] = React.useState<number | null>(null);
   const [roleModalName, setRoleModalName] = React.useState("");
   const [roleModalDesc, setRoleModalDesc] = React.useState("");
+  const [roleModalEmail, setRoleModalEmail] = React.useState("");
 
   const {
     roles,
@@ -526,6 +557,7 @@ export default function MahaFpcDashboard() {
     setRoleModalId(null);
     setRoleModalName("");
     setRoleModalDesc("");
+    setRoleModalEmail("");
     setIsRoleModalOpen(true);
   };
 
@@ -534,6 +566,7 @@ export default function MahaFpcDashboard() {
     setRoleModalId(role.id);
     setRoleModalName(role.name);
     setRoleModalDesc(role.description);
+    setRoleModalEmail(role.email || "");
     setIsRoleModalOpen(true);
   };
 
@@ -551,12 +584,10 @@ export default function MahaFpcDashboard() {
     if (!roleModalName.trim() || !roleModalDesc.trim()) return;
 
     if (roleModalMode === "create") {
-      // TODO: POST /api/roles
-      createRole(roleModalName, roleModalDesc);
+      createRole(roleModalName, roleModalDesc, roleModalEmail.trim());
       toast("Role created successfully");
     } else if (roleModalMode === "edit" && roleModalId !== null) {
-      // TODO: POST /api/roles
-      updateRole(roleModalId, roleModalName, roleModalDesc);
+      updateRole(roleModalId, roleModalName, roleModalDesc, roleModalEmail.trim());
       toast("Role updated");
     }
     setIsRoleModalOpen(false);
@@ -634,17 +665,18 @@ export default function MahaFpcDashboard() {
           <div className="tgrid">
             {/* Header */}
             <div className="trow font-bold text-xs uppercase tracking-wider text-tx-s bg-bg-s border-b border-bd-t rounded-t-md thead-row">
-              <div className="w-1/4">Role Name</div>
-              <div className="w-2/5">Description</div>
-              <div className="w-1/6">Users Assigned</div>
-              <div className="w-1/6">Created</div>
+              <div className="w-1/5">Role Name</div>
+              <div className="w-1/3">Description</div>
+              <div className="w-1/5">Access Email</div>
+              <div className="w-1/12 text-center">Users</div>
+              <div className="w-1/12 text-center">Created</div>
               <div className="w-1/6 text-right">Actions</div>
             </div>
 
             {/* Rows */}
             {roles.map((role) => (
               <div key={role.id} className="trow hover:bg-bg-t/50 transition-colors text-sm text-tx-s">
-                <div className="w-1/4 font-semibold text-tx-p flex items-center gap-2">
+                <div className="w-1/5 font-semibold text-tx-p flex items-center gap-2">
                   {role.is_superadmin ? (
                     <>
                       <IconLock className="w-4 h-4 text-tx-t shrink-0" />
@@ -655,7 +687,7 @@ export default function MahaFpcDashboard() {
                         {role.name}
                       </span>
                       <span className="pill p-teal text-[10px] leading-none py-0.5 ml-1">
-                        System Role
+                        System
                       </span>
                     </>
                   ) : (
@@ -667,9 +699,12 @@ export default function MahaFpcDashboard() {
                     </span>
                   )}
                 </div>
-                <div className="w-2/5 truncate pr-4 text-xs font-medium text-tx-s">{role.description}</div>
-                <div className="w-1/6 font-semibold text-tx-p">{role.usersAssigned}</div>
-                <div className="w-1/6 text-xs text-tx-t">{role.created}</div>
+                <div className="w-1/3 truncate pr-4 text-xs font-medium text-tx-s">{role.description}</div>
+                <div className="w-1/5 truncate pr-4 text-xs font-mono font-semibold text-tx-p">
+                  {role.email || <span className="text-tx-t italic font-normal">—</span>}
+                </div>
+                <div className="w-1/12 text-center font-semibold text-tx-p">{role.usersAssigned}</div>
+                <div className="w-1/12 text-center text-xs text-tx-t">{role.created}</div>
                 <div className="w-1/6 text-right flex justify-end gap-2 shrink-0">
                   {!role.is_superadmin ? (
                     <>
@@ -853,6 +888,15 @@ export default function MahaFpcDashboard() {
                       rows={3}
                       placeholder="e.g. Manages operations and views billing records"
                     />
+                    <Input
+                      label="Authorized Access Email"
+                      type="email"
+                      value={roleModalEmail}
+                      onChange={(e) => setRoleModalEmail(e.target.value)}
+                      placeholder="e.g. employee@mahafpc.in"
+                      floating={false}
+                      required
+                    />
                   </div>
 
                   <div className="pt-4 flex justify-end gap-3 border-t border-bd-t mt-6">
@@ -876,6 +920,167 @@ export default function MahaFpcDashboard() {
     );
   };
 
+  const renderMemberDirectory = () => {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <PageHeader
+          title="Member Directory"
+          subtitle="Complete registry of central organization employees, registered Buyers, and FPO coordinators."
+        />
+
+        {/* Directory Navigation Tabs */}
+        <div className="flex border-b border-bd-t gap-6 text-sm font-semibold select-none">
+          {[
+            { id: "users", label: "Employees & Managers", count: dirUsers.length },
+            { id: "fpos", label: "Registered FPOs", count: dirFpos.length },
+            { id: "buyers", label: "Registered Buyers", count: dirBuyers.length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSelectedDirTab(tab.id as any)}
+              className={`pb-3 relative transition-all ${
+                selectedDirTab === tab.id
+                  ? "text-primary border-b-2 border-primary font-bold"
+                  : "text-tx-s hover:text-tx-p"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className="ml-2 text-xs bg-bg-t px-1.5 py-0.5 rounded text-tx-t">
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Content Tabs */}
+        {selectedDirTab === "users" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dirUsers.length === 0 ? (
+              <div className="col-span-full text-center py-8 text-tx-t text-sm border border-dashed border-bd-t rounded-xl bg-bg-s/20">
+                No employees or managers registered.
+              </div>
+            ) : (
+              dirUsers.map((u) => (
+                <div key={u.id} className="bg-bg-p border border-bd-t rounded-2xl p-5 shadow-sm hover:shadow-md transition-all space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
+                      {u.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-tx-p">{u.name}</h4>
+                      <p className="text-xs text-tx-s mt-0.5">{u.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-xs border-t border-bd-t pt-3">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-tx-t tracking-wider">Role Type</span>
+                      <div className="font-semibold text-tx-p capitalize mt-0.5 text-xs">{u.roleType}</div>
+                    </div>
+                    {u.employeeRole && (
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-tx-t tracking-wider">Position</span>
+                        <div className="font-semibold text-tx-p mt-0.5 text-xs">{u.employeeRole}</div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-between items-center text-xs pt-1">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-tx-t tracking-wider">Status</span>
+                      <div className="mt-0.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          u.isActive ? "bg-teal-bg text-primary" : "bg-cor-bg text-cor"
+                        }`}>
+                          {u.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                    </div>
+                    {u.employeeId && (
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-tx-t tracking-wider">Employee ID</span>
+                        <div className="font-semibold text-tx-p mt-0.5 text-xs">{u.employeeId}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {selectedDirTab === "fpos" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dirFpos.length === 0 ? (
+              <div className="col-span-full text-center py-8 text-tx-t text-sm border border-dashed border-bd-t rounded-xl bg-bg-s/20">
+                No FPOs registered in the system.
+              </div>
+            ) : (
+              dirFpos.map((f) => (
+                <div key={f.id} className="bg-bg-p border border-bd-t rounded-2xl p-5 shadow-sm hover:shadow-md transition-all space-y-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-tx-p">{f.name}</h4>
+                    <p className="text-xs text-tx-s mt-1">Location: {f.location || "N/A"}</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs border-t border-bd-t pt-3">
+                    <div className="border-r border-bd-t">
+                      <span className="text-[9px] uppercase font-bold text-tx-t">Farmers</span>
+                      <div className="font-bold text-tx-p mt-0.5 text-xs">{f.membersCount || 0}</div>
+                    </div>
+                    <div className="border-r border-bd-t">
+                      <span className="text-[9px] uppercase font-bold text-tx-t">Conformance</span>
+                      <div className="font-bold text-tx-p mt-0.5 text-xs">{f.gradeConformance || "90%"}</div>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-tx-t">Rating</span>
+                      <div className="font-bold text-tx-p mt-0.5 text-xs">{f.rating || "4.0/5"}</div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-xs border-t border-bd-t pt-3">
+                    <span className="text-tx-s font-semibold text-xs">Reliability Score</span>
+                    <span className="font-bold text-primary text-xs">{f.reliabilityScore || 70} / 100</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {selectedDirTab === "buyers" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dirBuyers.length === 0 ? (
+              <div className="col-span-full text-center py-8 text-tx-t text-sm border border-dashed border-bd-t rounded-xl bg-bg-s/20">
+                No Buyers registered in the system.
+              </div>
+            ) : (
+              dirBuyers.map((b) => (
+                <div key={b.id} className="bg-bg-p border border-bd-t rounded-2xl p-5 shadow-sm hover:shadow-md transition-all space-y-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-tx-p">{b.name}</h4>
+                    {b.companyName && <p className="text-xs text-tx-s mt-0.5">{b.companyName}</p>}
+                    <p className="text-[11px] text-tx-t mt-1">Location: {b.location || "N/A"} &middot; Type: {b.businessType || "N/A"}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-center text-xs border-t border-bd-t pt-3">
+                    <div className="border-r border-bd-t">
+                      <span className="text-[9px] uppercase font-bold text-tx-t">Volume Traded</span>
+                      <div className="font-bold text-tx-p mt-0.5 text-xs">{b.volumeTraded || "0 MT"}</div>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-tx-t">Avg Pay Days</span>
+                      <div className="font-bold text-tx-p mt-0.5 text-xs">{b.paymentDaysAvg || "3.0 days"}</div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center text-xs border-t border-bd-t pt-3">
+                    <span className="text-tx-s font-semibold text-xs">Reliability Score</span>
+                    <span className="font-bold text-amb text-xs">{b.reliabilityScore || 70} / 100</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <DashboardShell>
       {activeTab === "Overview" && renderOverview()}
@@ -886,6 +1091,7 @@ export default function MahaFpcDashboard() {
       {activeTab === "Disputes" && renderDisputes()}
       {activeTab === "Archive" && renderArchive()}
       {activeTab === "Roles & Permissions" && renderRolesAndPermissions()}
+      {activeTab === "Member Directory" && renderMemberDirectory()}
     </DashboardShell>
   );
 }

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "@/context/AppContext";
-import { IconX, IconLock, IconShieldCheck, IconChevronDown, IconPackage, IconPhone, IconUser, IconBuilding, IconTrash, IconPlus } from "@tabler/icons-react";
+import { IconX, IconLock, IconShieldCheck, IconChevronDown, IconPackage, IconPhone, IconUser, IconBuilding, IconTrash, IconPlus, IconBook } from "@tabler/icons-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 
@@ -36,6 +36,7 @@ export const Modal: React.FC = () => {
   const [otpCode, setOtpCode] = useState("123456");
   const [agreeChecked, setAgreeChecked] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState("");
+  const [guideSource, setGuideSource] = useState<"dashboard" | "profile">("dashboard");
 
   // Profile settings state hooks
   const [profileCompanyName, setProfileCompanyName] = useState("R.K. Traders Pvt. Ltd");
@@ -477,210 +478,245 @@ export const Modal: React.FC = () => {
     };
 
     return (
-      <div className="space-y-5">
-        <div>
-          <h2 className="card-title text-tx-p flex items-center gap-2">
-            <IconUser className="w-5 h-5 text-primary" />
-            <span>Profile Settings</span>
-          </h2>
-          <p className="text-xs text-tx-s mt-1">
-            Manage your corporate profile, registry credentials, and authorized member lists (Role: <strong>{displayRole}</strong>)
-          </p>
-        </div>
-
-        {/* Tab Selection */}
-        <div className="flex border-b border-bd-t">
-          <button
-            type="button"
-            onClick={() => setActiveProfileTab("business")}
-            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all ${
-              activeProfileTab === "business"
-                ? "border-primary text-primary"
-                : "border-transparent text-tx-s hover:text-tx-p"
-            }`}
-          >
-            Business Registry Details
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveProfileTab("members")}
-            className={`px-4 py-2 text-xs font-bold border-b-2 transition-all ${
-              activeProfileTab === "members"
-                ? "border-primary text-primary"
-                : "border-transparent text-tx-s hover:text-tx-p"
-            }`}
-          >
-            Company Member Directory
-          </button>
-        </div>
-
-        {activeProfileTab === "business" ? (
-          <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
-            {/* Buyer fields */}
-            {currentRole === "buyer" && (
-              <>
-                <Input
-                  label="Company / Business Name"
-                  value={profileCompanyName}
-                  onChange={(e) => setProfileCompanyName(e.target.value)}
-                  floating={false}
-                />
-                <div>
-                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">
-                    Business Type
-                  </label>
-                  <select
-                    value={profileBusinessType}
-                    onChange={(e) => setProfileBusinessType(e.target.value)}
-                    className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-primary text-xs"
-                  >
-                    <option value="Trader">Trader</option>
-                    <option value="Exporter">Exporter</option>
-                    <option value="Retailer">Retailer</option>
-                    <option value="Processor">Processor</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <Input
-                  label="GSTIN Number (Optional)"
-                  placeholder="e.g. 27AAACP1234A1Z1"
-                  value={profileGstin}
-                  onChange={(e) => setProfileGstin(e.target.value)}
-                  floating={false}
-                />
-              </>
-            )}
-
-            {/* FPO fields */}
-            {currentRole === "fpo" && (
-              <>
-                <Input
-                  label="FPO Registration Number"
-                  value={profileFpoReg}
-                  onChange={(e) => setProfileFpoReg(e.target.value)}
-                  floating={false}
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <Input
-                    label="State"
-                    value={profileState}
-                    onChange={(e) => setProfileState(e.target.value)}
-                    floating={false}
-                  />
-                  <Input
-                    label="District"
-                    value={profileDistrict}
-                    onChange={(e) => setProfileDistrict(e.target.value)}
-                    floating={false}
-                  />
-                  <Input
-                    label="Village"
-                    value={profileVillage}
-                    onChange={(e) => setProfileVillage(e.target.value)}
-                    floating={false}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    label="Bank Account Number"
-                    value={profileBankAcc}
-                    onChange={(e) => setProfileBankAcc(e.target.value)}
-                    floating={false}
-                  />
-                  <Input
-                    label="IFSC Code"
-                    value={profileBankIfsc}
-                    onChange={(e) => setProfileBankIfsc(e.target.value)}
-                    floating={false}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Admin/MahaFPC fields */}
-            {currentRole === "mahafpc" && (
-              <>
-                <Input
-                  label="Employee ID / Credential Reference"
-                  value={profileEmployeeId}
-                  onChange={(e) => setProfileEmployeeId(e.target.value)}
-                  floating={false}
-                />
-                <Input
-                  label="Official Email Domain"
-                  value="compliance@mahafpc.in"
-                  disabled
-                  floating={false}
-                />
-              </>
-            )}
-
-            {/* General fallback / Role Switcher */}
-            <div className="border-t border-bd-t pt-4">
-              <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">
-                Switch Active System Role (Demo Mode)
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedRoleId}
-                  onChange={(e) => setSelectedRoleId(e.target.value)}
-                  className="w-full h-10 px-3 pr-10 text-xs font-semibold text-tx-p bg-bg-p border border-bd-s rounded focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                >
-                  <option value="">Select system role...</option>
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-                <IconChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tx-t pointer-events-none" />
-              </div>
+      <div className="flex flex-col h-full select-none max-w-7xl mx-auto w-full text-left">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-5 border-b border-bd-t">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <IconUser className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-tx-p flex items-center gap-2">
+                <span>Profile Settings</span>
+              </h2>
+              <p className="text-xs md:text-sm text-tx-s mt-0.5">
+                Manage your corporate profile, registry credentials, and authorized member lists (Role: <strong>{displayRole}</strong>)
+              </p>
             </div>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Authorized Members Directory */}
-            <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-              <label className="block text-[11px] font-bold text-tx-s uppercase tracking-wide">
-                Authorized Personnel Directory
-              </label>
-              {profileMembers.length === 0 ? (
-                <div className="text-center py-4 text-xs text-tx-t">No company members registered.</div>
-              ) : (
-                <div className="space-y-1.5">
-                  {profileMembers.map((m, idx) => (
-                    <div key={idx} className="flex justify-between items-center bg-bg-s border border-bd-t rounded px-3 py-1.5 text-xs font-semibold">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-2">
-                          <IconUser className="w-3.5 h-3.5 text-tx-s" />
-                          <span className="text-tx-p">{m.name}</span>
-                          <span className="text-[9px] text-tx-s bg-bg-t px-1.5 py-0.5 rounded tracking-wide uppercase">
-                            {m.role}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-tx-s ml-5">{m.email}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMember(m.id!)}
-                        className="text-tx-t hover:text-danger p-1 transition-colors"
-                        title="Remove member"
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setGuideSource("profile");
+              openModal("user-guide");
+            }}
+            className="text-xs font-semibold px-4 flex items-center gap-1.5 border-primary/20 text-primary bg-primary/5 hover:bg-primary/10"
+          >
+            <IconBook className="w-4 h-4" />
+            <span>View User Guide</span>
+          </Button>
+        </div>
+
+        {/* Two Column Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 py-5 overflow-y-auto flex-1 pr-1 scrollbar-thin">
+          {/* Left Column: Business Registry Details (col-span-5) */}
+          <div className="lg:col-span-5 space-y-6 flex flex-col justify-between">
+            <div className="space-y-4">
+              <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
+                <IconBuilding className="w-4 h-4 text-primary" />
+                <span>Business Registry Details</span>
+              </h3>
+              
+              <div className="space-y-4">
+                {/* Buyer fields */}
+                {currentRole === "buyer" && (
+                  <>
+                    <Input
+                      label="Company / Business Name"
+                      value={profileCompanyName}
+                      onChange={(e) => setProfileCompanyName(e.target.value)}
+                      floating={false}
+                    />
+                    <div>
+                      <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">
+                        Business Type
+                      </label>
+                      <select
+                        value={profileBusinessType}
+                        onChange={(e) => setProfileBusinessType(e.target.value)}
+                        className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-primary text-xs"
                       >
-                        <IconTrash className="w-4 h-4" />
-                      </button>
+                        <option value="Trader">Trader</option>
+                        <option value="Exporter">Exporter</option>
+                        <option value="Retailer">Retailer</option>
+                        <option value="Processor">Processor</option>
+                        <option value="Other">Other</option>
+                      </select>
                     </div>
-                  ))}
+                    <Input
+                      label="GSTIN Number (Optional)"
+                      placeholder="e.g. 27AAACP1234A1Z1"
+                      value={profileGstin}
+                      onChange={(e) => setProfileGstin(e.target.value)}
+                      floating={false}
+                    />
+                  </>
+                )}
+
+                {/* FPO fields */}
+                {currentRole === "fpo" && (
+                  <>
+                    <Input
+                      label="FPO Registration Number"
+                      value={profileFpoReg}
+                      onChange={(e) => setProfileFpoReg(e.target.value)}
+                      floating={false}
+                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <Input
+                        label="State"
+                        value={profileState}
+                        onChange={(e) => setProfileState(e.target.value)}
+                        floating={false}
+                      />
+                      <Input
+                        label="District"
+                        value={profileDistrict}
+                        onChange={(e) => setProfileDistrict(e.target.value)}
+                        floating={false}
+                      />
+                      <Input
+                        label="Village"
+                        value={profileVillage}
+                        onChange={(e) => setProfileVillage(e.target.value)}
+                        floating={false}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        label="Bank Account Number"
+                        value={profileBankAcc}
+                        onChange={(e) => setProfileBankAcc(e.target.value)}
+                        floating={false}
+                      />
+                      <Input
+                        label="IFSC Code"
+                        value={profileBankIfsc}
+                        onChange={(e) => setProfileBankIfsc(e.target.value)}
+                        floating={false}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Admin/MahaFPC fields */}
+                {currentRole === "mahafpc" && (
+                  <>
+                    <Input
+                      label="Employee ID / Credential Reference"
+                      value={profileEmployeeId}
+                      onChange={(e) => setProfileEmployeeId(e.target.value)}
+                      floating={false}
+                    />
+                    <Input
+                      label="Official Email Domain"
+                      value="compliance@mahafpc.in"
+                      disabled
+                      floating={false}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Active System Role Selector */}
+            <div className="border-t border-bd-t pt-5 mt-2 space-y-3">
+              <h3 className="text-sm font-bold text-tx-p">Demo Configuration</h3>
+              <div>
+                <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">
+                  Switch Active System Role
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedRoleId}
+                    onChange={(e) => setSelectedRoleId(e.target.value)}
+                    className="w-full h-10 px-3 pr-10 text-xs font-semibold text-tx-p bg-bg-p border border-bd-s rounded focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                  >
+                    <option value="">Select system role...</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                  <IconChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tx-t pointer-events-none" />
                 </div>
-              )}
+              </div>
+            </div>
+
+            {/* Save Buttons for Left Column */}
+            <div className="pt-5 border-t border-bd-t mt-4 flex gap-3">
+              <Button type="button" variant="secondary" size="md" onClick={closeModal} className="flex-1">
+                Cancel
+              </Button>
+              <Button type="button" size="md" onClick={handleSave} className="flex-1">
+                Save Settings
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Column: Authorized Google OAuth Accounts (col-span-7) */}
+          <div className="lg:col-span-7 space-y-6 lg:border-l lg:border-bd-t lg:pl-10 flex flex-col justify-between">
+            <div className="space-y-4 flex-1">
+              <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
+                <IconShieldCheck className="w-5 h-5 text-primary" />
+                <span>Authorized Google OAuth Accounts</span>
+              </h3>
+              <p className="text-xs text-tx-s leading-relaxed">
+                Add and manage Google accounts authorized to log in under your organization. Authorized accounts can bypass standard sign-in restrictions.
+              </p>
+
+              {/* Members List styled as cards/boxes */}
+              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                {profileMembers.length === 0 ? (
+                  <div className="text-center py-8 text-sm text-tx-t border border-dashed border-bd-t rounded-xl bg-bg-s/30">
+                    No authorized Google accounts registered.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {profileMembers.map((m, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-bg-s border border-bd-t rounded-xl p-4 flex items-center justify-between shadow-sm hover:shadow-md hover:border-bd-s transition-all"
+                      >
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
+                            {m.name ? m.name.charAt(0).toUpperCase() : m.email.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="overflow-hidden">
+                            <div className="text-sm font-semibold text-tx-p truncate flex items-center gap-2">
+                              <span>{m.name}</span>
+                              <span className="text-[9px] bg-bg-t text-primary border border-bd-t px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                {m.role}
+                              </span>
+                            </div>
+                            <div className="text-xs text-tx-s font-medium mt-0.5 truncate">{m.email}</div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMember(m.id!)}
+                          className="p-2 rounded-lg text-tx-t hover:text-danger hover:bg-danger/10 transition-all shrink-0"
+                          title="Remove Authorization"
+                        >
+                          <IconTrash className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Add member form */}
-            <div className="border-t border-bd-t pt-4 space-y-3">
-              <label className="block text-[11px] font-bold text-tx-s uppercase tracking-wide">
-                Add Corporate Member / Employee
-              </label>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
+            <div className="border-t border-bd-t pt-5 space-y-4">
+              <h4 className="text-sm font-bold text-tx-p uppercase tracking-wider">
+                Authorize New Google Account / Member
+              </h4>
+              <div className="space-y-4 bg-bg-s/40 border border-bd-t rounded-xl p-4 md:p-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     label="Member Full Name"
                     placeholder="e.g. Ramesh More"
@@ -689,7 +725,7 @@ export const Modal: React.FC = () => {
                     floating={false}
                   />
                   <Input
-                    label="Gmail Address (for Sign-In)"
+                    label="Google Email Address (for Sign-In)"
                     placeholder="e.g. ramesh@gmail.com"
                     type="email"
                     value={memberEmail}
@@ -697,9 +733,11 @@ export const Modal: React.FC = () => {
                     floating={false}
                   />
                 </div>
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <label className="block text-[10px] font-bold text-tx-s mb-1 uppercase tracking-wide">Role / Position</label>
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                  <div className="flex-1 w-full">
+                    <label className="block text-[10px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">
+                      Role / Position
+                    </label>
                     <select
                       value={newMemberRole}
                       onChange={(e) => setNewMemberRole(e.target.value)}
@@ -711,22 +749,17 @@ export const Modal: React.FC = () => {
                       <option value="Agent">Agent</option>
                     </select>
                   </div>
-                  <Button type="button" onClick={handleAddMember} className="h-[38px] flex items-center justify-center px-6">
-                    <IconPlus className="w-4 h-4 mr-1" /> Add Member
+                  <Button
+                    type="button"
+                    onClick={handleAddMember}
+                    className="h-[38px] flex items-center justify-center px-6 w-full md:w-auto shrink-0"
+                  >
+                    <IconPlus className="w-4 h-4 mr-1.5" /> Authorize Account
                   </Button>
                 </div>
               </div>
             </div>
           </div>
-        )}
-
-        <div className="pt-4 flex justify-end gap-3 border-t border-bd-t mt-6">
-          <Button type="button" variant="secondary" size="md" onClick={closeModal}>
-            Cancel
-          </Button>
-          <Button type="button" size="md" onClick={handleSave}>
-            Save Settings
-          </Button>
         </div>
       </div>
     );
@@ -803,10 +836,190 @@ export const Modal: React.FC = () => {
     );
   };
 
+  const renderUserGuide = () => {
+    const handleBack = () => {
+      if (guideSource === "profile") {
+        openModal("user-profile");
+      } else {
+        closeModal();
+      }
+    };
+
+    return (
+      <div className="flex flex-col h-full select-none max-w-5xl mx-auto w-full text-left">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-5 border-b border-bd-t">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-teal-bg text-primary flex items-center justify-center shrink-0">
+              <IconBook className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-tx-p flex items-center gap-2">
+                <span>User Guide & Onboarding Reference</span>
+              </h2>
+              <p className="text-xs md:text-sm text-tx-s mt-0.5">
+                Learn how to manage lots, submit bids, sign contracts, and handle escrow payouts.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleBack}
+            className="text-xs font-semibold px-4"
+          >
+            Back
+          </Button>
+        </div>
+
+        {/* Guides for FPO and Buyer */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6 overflow-y-auto flex-1 pr-1 scrollbar-thin">
+          {/* FPO Column */}
+          <div className="space-y-5 bg-bg-s/30 border border-bd-t rounded-2xl p-6">
+            <div className="flex items-center gap-2 text-primary">
+              <IconPackage className="w-6 h-6" />
+              <h3 className="text-lg font-bold">FPO (Seller) Guide</h3>
+            </div>
+            <p className="text-xs text-tx-s leading-relaxed">
+              As an FPO, you represent farmers. Your primary workflow involves listing harvested turmeric supply, negotiating bids, and coordinating payouts.
+            </p>
+            
+            <div className="space-y-4 pt-2">
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-teal-bg text-primary text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Register New Lots</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    Click <strong>Register new lot</strong> tab. Enter variety (e.g., Erode finger, Salem bulb), grade, expected price, weight, and curcumin content.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-teal-bg text-primary text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">AI Match Generation</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    The platform scans database buyers to pair your lot with appropriate buyers based on curcumin profile, location, and grading specs.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-teal-bg text-primary text-xs font-bold flex items-center justify-center shrink-0">3</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Respond to Bids (Quotes)</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    Review incoming bids in the <strong>Quotes</strong> tab. You can Accept the bid directly, decline it, or counter with a revised price.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-teal-bg text-primary text-xs font-bold flex items-center justify-center shrink-0">4</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">eSign & Legal Conformance</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    Once a quote is accepted, the system generates a draft trade contract. eSign via Aadhaar verification to lock escrow.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-teal-bg text-primary text-xs font-bold flex items-center justify-center shrink-0">5</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Escrow Splits & Farmer Payout</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    Ship details and transit tracking update automatically. When buyer receives supply and releases escrow, payment splits directly to farmers' accounts.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Buyer Column */}
+          <div className="space-y-5 bg-bg-s/30 border border-bd-t rounded-2xl p-6">
+            <div className="flex items-center gap-2 text-primary">
+              <IconBuilding className="w-6 h-6" />
+              <h3 className="text-lg font-bold">Buyer Guide</h3>
+            </div>
+            <p className="text-xs text-tx-s leading-relaxed">
+              As a procurement manager or trader, your workflow centers around sourcing quality turmeric, negotiating deals, depositing escrow, and accepting delivery.
+            </p>
+            
+            <div className="space-y-4 pt-2">
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Explore turmeric Lots</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    Browse FPO listings. View detailed lot profiles including curcumin percentage, harvest history, grade metrics, and location.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Submit a Quote (Bid)</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    Input your target purchase price and quantity, then submit a quote. Bids are instantly transmitted to FPOs.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">3</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Negotiate Counters</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    If an FPO sends a counter-offer, you can either accept the counter or respond with a new buyer bid in the <strong>Quotes</strong> page.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">4</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Lock Escrow Payment</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    eSign the contract via Aadhaar OTP or DSC. Deposit the required contract amount into the MahaFPC escrow pool to initiate logistics.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">5</span>
+                <div>
+                  <h4 className="text-sm font-semibold text-tx-p">Accept Delivery & Release</h4>
+                  <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                    Monitor delivery. Once the turmeric shipment is delivered and quality conformed, click <strong>Release Funds</strong> to disburse to farmers.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="pt-4 border-t border-bd-t flex justify-end">
+          <Button type="button" size="md" onClick={handleBack}>
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <AnimatePresence>
       {modal.type && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className={
+          modal.type === "user-profile" || modal.type === "user-guide"
+            ? "fixed inset-0 z-50 flex items-center justify-center"
+            : "fixed inset-0 z-50 flex items-center justify-center p-4"
+        }>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -817,28 +1030,45 @@ export const Modal: React.FC = () => {
             aria-hidden
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            initial={modal.type === "user-profile" || modal.type === "user-guide"
+              ? { opacity: 0, y: 15 } 
+              : { opacity: 0, scale: 0.95, y: 8 }
+            }
+            animate={modal.type === "user-profile" || modal.type === "user-guide"
+              ? { opacity: 1, y: 0 } 
+              : { opacity: 1, scale: 1, y: 0 }
+            }
+            exit={modal.type === "user-profile" || modal.type === "user-guide"
+              ? { opacity: 0, y: 15 } 
+              : { opacity: 0, scale: 0.95, y: 8 }
+            }
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             role="dialog"
             aria-modal="true"
-            className="bg-bg-p border border-bd-t rounded-xl shadow-lg w-full max-w-md p-6 z-10 relative"
+            className={
+              modal.type === "user-profile" || modal.type === "user-guide"
+                ? "bg-bg-p z-10 relative flex flex-col w-screen h-screen max-w-none rounded-none p-6 md:p-10 overflow-hidden"
+                : "bg-bg-p border border-bd-t rounded-xl shadow-lg w-full max-w-md p-6 z-10 relative"
+            }
           >
             <button
               onClick={closeModal}
-              className="absolute top-4 right-4 text-tx-t hover:text-tx-p transition-colors p-1.5 rounded-md hover:bg-bg-t"
+              className={
+                modal.type === "user-profile" || modal.type === "user-guide"
+                  ? "absolute text-tx-t hover:text-tx-p transition-colors p-1.5 rounded-md hover:bg-bg-t top-6 right-6 md:top-8 md:right-8 z-20"
+                  : "absolute text-tx-t hover:text-tx-p transition-colors p-1.5 rounded-md hover:bg-bg-t top-4 right-4 z-20"
+              }
               aria-label="Close modal"
             >
               <IconX className="w-5 h-5" />
             </button>
-
             {modal.type === "quote-response" && renderFpoResponse()}
             {modal.type === "buyer-quote" && renderBuyerQuote()}
             {modal.type === "buyer-counter" && renderBuyerCounter()}
             {modal.type === "buyer-esign" && renderBuyerEsign()}
             {modal.type === "user-profile" && renderUserProfile()}
             {modal.type === "buyer-lot-details" && renderBuyerLotDetails()}
+            {modal.type === "user-guide" && renderUserGuide()}
           </motion.div>
         </div>
       )}

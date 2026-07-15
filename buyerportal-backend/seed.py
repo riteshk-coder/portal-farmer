@@ -1,9 +1,11 @@
 import sys
+import os
+import json
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, Base, engine
 from app.core.security import hash_password
-from app.models.user import User, Fpo, Buyer, RoleType
+from app.models.user import User, Fpo, Buyer, RoleType, Consultant, AdminInvite
 from app.models.farmer import Farmer
 from app.models.lot import Lot, LotMatch, LotStatus
 from app.models.quote import Quote, QuoteStatus, CounterBy
@@ -13,8 +15,139 @@ from app.models.escrow import LedgerEntry, FarmerSplit, EntryType, SplitStatus
 from app.models.notification import SystemLog, NotificationChannel
 from app.models.role import SystemRole, RolePermission
 
+def backup_custom_data(db: Session) -> dict:
+    backup = {
+        "users": [],
+        "buyers": [],
+        "fpos": [],
+        "consultants": [],
+        "admin_invites": []
+    }
+    
+    try:
+        # Default seeded emails
+        default_emails = {
+            "admin@mahafpc.in",
+            "fpo@buyerportal.in",
+            "buyer@buyerportal.in",
+            "escrow@buyerportal.in",
+            "portal@buyerportal.in",
+            "fpo@test.com",
+            "buyer@test.com",
+            "regulator@test.com",
+            "escrow@test.com",
+            "fpo@buyerportal.com",
+            "buyer@buyerportal.com",
+            "mahafpc@buyerportal.com",
+            "escrow@buyerportal.com",
+            "portal@buyerportal.com",
+            "riteshk@ova.ngo"
+        }
+        
+        # Backup custom users
+        users = db.query(User).all()
+        custom_users = [u for u in users if u.email not in default_emails]
+        for u in custom_users:
+            backup["users"].append({
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "password_hash": u.password_hash,
+                "role_type": u.role_type.value,
+                "system_role_id": u.system_role_id,
+                "fpo_id": u.fpo_id,
+                "buyer_id": u.buyer_id,
+                "consultant_id": u.consultant_id,
+                "mobile": u.mobile,
+                "employee_id": u.employee_id,
+                "employee_role": u.employee_role,
+                "is_active": u.is_active
+            })
+            
+        # Default seeded buyer IDs are 1, 2, 3, 4, 5
+        buyers = db.query(Buyer).filter(Buyer.id > 5).all()
+        for b in buyers:
+            backup["buyers"].append({
+                "id": b.id,
+                "name": b.name,
+                "location": b.location,
+                "reliability_score": b.reliability_score,
+                "payment_days_avg": b.payment_days_avg,
+                "volume_traded": b.volume_traded,
+                "company_name": getattr(b, "company_name", None),
+                "business_type": getattr(b, "business_type", None),
+                "gstin": getattr(b, "gstin", None)
+            })
+            
+        # Default seeded FPO IDs are 1, 2, 3, 4
+        fpos = db.query(Fpo).filter(Fpo.id > 4).all()
+        for f in fpos:
+            backup["fpos"].append({
+                "id": f.id,
+                "name": f.name,
+                "location": f.location,
+                "members_count": f.members_count,
+                "grade_conformance": f.grade_conformance,
+                "rating": f.rating,
+                "fpo_registration_number": getattr(f, "fpo_registration_number", None),
+                "state": getattr(f, "state", None),
+                "district": getattr(f, "district", None),
+                "village": getattr(f, "village", None),
+                "bank_account_num": getattr(f, "bank_account_num", None),
+                "bank_ifsc": getattr(f, "bank_ifsc", None)
+            })
+            
+        # Consultants
+        consultants = db.query(Consultant).all()
+        for c in consultants:
+            backup["consultants"].append({
+                "id": c.id,
+                "name": c.name,
+                "email": c.email,
+                "mobile": c.mobile,
+                "notes": c.notes
+            })
+            
+        # Admin Invites
+        invites = db.query(AdminInvite).all()
+        for i in invites:
+            backup["admin_invites"].append({
+                "id": i.id,
+                "email": i.email,
+                "employee_id": i.employee_id,
+                "invited_at": i.invited_at
+            })
+            
+    except Exception as e:
+        print(f"Skipping custom data backup (tables may not exist yet): {e}")
+        
+    return backup
+
 def seed_db():
-    # Create all tables on PostgreSQL automatically
+    # 1. Backup custom registered user metadata if tables exist
+    backup_file = "custom_seeds.json"
+    backup = {
+        "users": [],
+        "buyers": [],
+        "fpos": [],
+        "consultants": [],
+        "admin_invites": []
+    }
+    
+    try:
+        db = SessionLocal()
+        backup = backup_custom_data(db)
+        db.close()
+    except Exception:
+        pass
+
+    # Save backup to file if we found entries, otherwise retain existing backup file if present
+    if backup["users"] or backup["buyers"] or backup["fpos"] or backup["admin_invites"]:
+        with open(backup_file, "w") as f:
+            json.dump(backup, f, indent=2)
+        print("Backup custom registered data to custom_seeds.json completed.")
+
+    # 2. Recreate all tables
     print("Recreating database tables...")
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
@@ -22,9 +155,9 @@ def seed_db():
     db = SessionLocal()
 
     print("Seeding System Roles...")
-    superadmin = SystemRole(id=1, name="Superadmin", description="Full system access", is_superadmin=True, users_assigned=1)
-    manager = SystemRole(id=2, name="Manager", description="Manager access", is_superadmin=False, users_assigned=3)
-    viewer = SystemRole(id=3, name="Viewer", description="Viewer access", is_superadmin=False, users_assigned=1)
+    superadmin = SystemRole(id=1, name="Superadmin", description="Full system access", email="admin@mahafpc.in", is_superadmin=True, users_assigned=1)
+    manager = SystemRole(id=2, name="Manager", description="Manager access", email="fpo@buyerportal.in", is_superadmin=False, users_assigned=3)
+    viewer = SystemRole(id=3, name="Viewer", description="Viewer access", email="portal@buyerportal.in", is_superadmin=False, users_assigned=1)
     db.add_all([superadmin, manager, viewer])
     db.commit()
 
@@ -82,86 +215,59 @@ def seed_db():
         User(id=3, name="RK Purchase Manager", email="buyer@buyerportal.in", password_hash=hash_password("buyer@123"), role_type=RoleType.buyer, buyer_id=1, system_role_id=2),
         User(id=4, name="Escrow Manager", email="escrow@buyerportal.in", password_hash=hash_password("escrow@123"), role_type=RoleType.escrow, system_role_id=2),
         User(id=5, name="AI Matching Daemon", email="portal@buyerportal.in", password_hash=hash_password("portal@123"), role_type=RoleType.portal, system_role_id=3),
+        User(id=6, name="Ritesh Khatakar", email="riteshk@ova.ngo", password_hash=hash_password("admin@123"), role_type=RoleType.mahafpc, system_role_id=1),
     ]
     db.add_all(users)
     db.commit()
 
-    print("Seeding lots...")
-    now = datetime.utcnow()
-    lot_2841 = Lot(id="LOT-2841", description="Erode finger turmeric", qty=12.0, grade="A", status=LotStatus.matched, price_expectation=134.0, location="Nashik, MH", curcumin_percent=4.2, harvest_date="2026-06-15", notes="Moisture 9%", fpo_id=1, created_at=now - timedelta(minutes=10))
-    lot_2842 = Lot(id="LOT-2842", description="Salem bulb turmeric", qty=8.5, grade="B", status=LotStatus.quoting, price_expectation=130.0, location="Salem, TN", curcumin_percent=3.8, harvest_date="2026-06-10", notes="Well dried", fpo_id=1, created_at=now - timedelta(days=1))
-    lot_2843 = Lot(id="LOT-2843", description="Nizamabad premium", qty=20.0, grade="Premium", status=LotStatus.pending_match, price_expectation=132.0, location="Nizamabad, TS", curcumin_percent=4.5, harvest_date="2026-06-20", notes="Clean quality", fpo_id=1, created_at=now - timedelta(minutes=8))
-    lot_2844 = Lot(id="LOT-2844", description="Erode finger turmeric", qty=5.0, grade="B", status=LotStatus.counter_offer, price_expectation=128.0, location="Nashik, MH", curcumin_percent=3.6, harvest_date="2026-06-08", notes="Slight moisture", fpo_id=1, created_at=now - timedelta(hours=1))
-    lot_2839 = Lot(id="LOT-2839", description="Erode finger turmeric", qty=12.0, grade="A", status=LotStatus.dispatched, price_expectation=134.0, location="Nashik, MH", curcumin_percent=4.1, harvest_date="2026-05-25", notes="Premium quality", fpo_id=1, created_at=now - timedelta(days=4))
-    lot_2837 = Lot(id="LOT-2837", description="Salem finger turmeric", qty=8.8, grade="B", status=LotStatus.dispatched, price_expectation=131.0, location="Salem, TN", curcumin_percent=3.7, harvest_date="2026-05-20", notes="Well polished", fpo_id=1, created_at=now - timedelta(days=5))
-    lot_2835 = Lot(id="LOT-2835", description="Nizamabad premium", qty=7.0, grade="Premium", status=LotStatus.dispatched, price_expectation=128.0, location="Nizamabad, TS", curcumin_percent=4.6, harvest_date="2026-05-15", notes="Lab report verified", fpo_id=1, created_at=now - timedelta(days=6))
-    db.add_all([lot_2841, lot_2842, lot_2843, lot_2844, lot_2839, lot_2837, lot_2835])
+    print("Seeding default admin invites...")
+    invite = AdminInvite(id=99, email="riteshk@ova.ngo", employee_id="EMP-0925", invited_at=datetime.utcnow().isoformat())
+    db.add(invite)
     db.commit()
 
-    print("Seeding matches...")
-    m1 = LotMatch(id=1, lot_id="LOT-2841", buyer_id=1, match_score=91, offered_price=131.0)
-    m2 = LotMatch(id=2, lot_id="LOT-2841", buyer_id=2, match_score=85, offered_price=131.0)
-    m3 = LotMatch(id=3, lot_id="LOT-2841", buyer_id=3, match_score=72, offered_price=128.0)
-    db.add_all([m1, m2, m3])
-    db.commit()
+    print("Skipping mock lots and transaction seeding for a clean initial state.")
 
-    print("Seeding quotes...")
-    q1 = Quote(id="QT-201", lot_id="LOT-2842", buyer_id=1, price=129.0, qty=8.5, status=QuoteStatus.awaiting_response, message="Immediate pickup available.")
-    q2 = Quote(id="QT-202", lot_id="LOT-2844", buyer_id=3, price=125.0, qty=5.0, status=QuoteStatus.counter_offer, counter_by=CounterBy.buyer, message="Our best offer for Grade B finger lot.", counter_rounds=1)
-    q3 = Quote(id="QT-203", lot_id="LOT-2841", buyer_id=4, price=128.0, qty=12.0, status=QuoteStatus.accepted, message="Contract CNT-0092 generated.")
-    db.add_all([q1, q2, q3])
-    db.commit()
-
-    print("Seeding contracts...")
-    c1 = Contract(id="CNT-0091", lot_id="LOT-2839", buyer_id=1, fpo_id=1, qty=12.0, price=134.0, amount=16.08, status=ContractStatus.esign_pending, fpo_signed=True, buyer_signed=False, escrow_status=EscrowStatus.pending_deposit)
-    c2 = Contract(id="CNT-0090", lot_id="LOT-2837", buyer_id=3, fpo_id=1, qty=8.8, price=131.0, amount=11.50, status=ContractStatus.signed, fpo_signed=True, buyer_signed=True, escrow_status=EscrowStatus.deposited, eway_bill="EWAY-283901", gps_tracking_id="GPS-892019", gst_invoice="INV-902102")
-    c3 = Contract(id="CNT-0088", lot_id="LOT-2835", buyer_id=4, fpo_id=1, qty=7.0, price=127.0, amount=8.90, status=ContractStatus.signed, fpo_signed=True, buyer_signed=True, escrow_status=EscrowStatus.released)
-    db.add_all([c1, c2, c3])
-    db.commit()
-
-    print("Seeding disputes...")
-    d1 = Dispute(id="DSP-004", type=DisputeType.quality_mismatch, lot_id="LOT-2841", buyer_id=4, fpo_id=2, description="Curcumin below specification standard. Expected 4.5%, tested 3.8%.", status=DisputeStatus.review, filed_at=now - timedelta(days=3))
-    d2 = Dispute(id="DSP-005", type=DisputeType.payment_delay, lot_id="LOT-2842", buyer_id=5, fpo_id=3, description="Escrow funds deposit timeline exceeded by 48 hours.", status=DisputeStatus.pending, filed_at=now - timedelta(days=5))
-    db.add_all([d1, d2])
-    db.commit()
-
-    print("Seeding farmer splits...")
-    s1 = FarmerSplit(id=1, lot_id="LOT-2837", farmer_name="Ramesh Patil", share_percent=28.0, amount=225000.0, status=SplitStatus.paid)
-    s2 = FarmerSplit(id=2, lot_id="LOT-2837", farmer_name="Suresh Jadhav", share_percent=22.0, amount=177000.0, status=SplitStatus.paid)
-    s3 = FarmerSplit(id=3, lot_id="LOT-2837", farmer_name="Priya Kulkarni", share_percent=17.0, amount=137000.0, status=SplitStatus.paid)
-    s4 = FarmerSplit(id=4, lot_id="LOT-2837", farmer_name="Ganesh More", share_percent=33.0, amount=266000.0, status=SplitStatus.paid)
-    db.add_all([s1, s2, s3, s4])
-    db.commit()
-
-    print("Seeding ledger entries...")
-    l1 = LedgerEntry(id="TXN-9021", contract_id="CNT-0091", type=EntryType.credit, party="R.K. Traders Pvt. Ltd", amount=1608000.0, timestamp=now - timedelta(days=2))
-    db.add(l1)
-    db.commit()
-
-    print("Seeding system logs...")
-    log1 = SystemLog(
-        id="LOG-001",
-        channel=NotificationChannel.system,
-        recipient="AI Matching Core",
-        message="New AI Buyer Match found for Erode finger turmeric (LOT-2841). R.K. Traders Pvt. Ltd matched with 91% confidence score.",
-        timestamp=now - timedelta(minutes=10)
-    )
-    log2 = SystemLog(
-        id="LOG-002",
-        channel=NotificationChannel.email,
-        recipient="purchase@rktraders.in",
-        message="Agronomic Alert: Nizamabad premium turmeric (LOT-2843) uploaded. Fits your curcumin requirement criteria. WhatsApp alert dispatched.",
-        timestamp=now - timedelta(minutes=8)
-    )
-    log3 = SystemLog(
-        id="LOG-003",
-        channel=NotificationChannel.system,
-        recipient="Escrow Daemon",
-        message="Auto-generated contract CNT-0091 for LOT-2839 uploaded to vault.",
-        timestamp=now - timedelta(days=1)
-    )
-    db.add_all([log1, log2, log3])
-    db.commit()
+    # 3. Load and restore backup custom data
+    if os.path.exists(backup_file):
+        print("Restoring custom registered data from custom_seeds.json...")
+        try:
+            with open(backup_file, "r") as f:
+                saved = json.load(f)
+                
+            # Restore Fpos
+            for f_data in saved.get("fpos", []):
+                if not db.query(Fpo).filter(Fpo.id == f_data["id"]).first():
+                    db.add(Fpo(**f_data))
+            db.commit()
+            
+            # Restore Buyers
+            for b_data in saved.get("buyers", []):
+                if not db.query(Buyer).filter(Buyer.id == b_data["id"]).first():
+                    db.add(Buyer(**b_data))
+            db.commit()
+            
+            # Restore Consultants
+            for c_data in saved.get("consultants", []):
+                if not db.query(Consultant).filter(Consultant.id == c_data["id"]).first():
+                    db.add(Consultant(**c_data))
+            db.commit()
+            
+            # Restore Admin Invites
+            for i_data in saved.get("admin_invites", []):
+                if not db.query(AdminInvite).filter(AdminInvite.email == i_data["email"]).first():
+                    db.add(AdminInvite(**i_data))
+            db.commit()
+            
+            # Restore Users
+            for u_data in saved.get("users", []):
+                if not db.query(User).filter(User.email == u_data["email"]).first():
+                    role_str = u_data.pop("role_type")
+                    u_data["role_type"] = RoleType(role_str)
+                    db.add(User(**u_data))
+            db.commit()
+            print("Custom data restoration complete!")
+        except Exception as e:
+            print(f"Error restoring custom seeds: {e}")
     
     from sqlalchemy import text
     if "postgresql" in engine.name:

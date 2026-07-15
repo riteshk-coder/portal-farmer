@@ -144,11 +144,11 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg btn-gradient flex items-center justify-center">
-              <span className="text-white font-bold text-xs">D</span>
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shadow-sm">
+              <img src="/logo.jpg" alt="Buyer Portal Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-bold text-base tracking-tight text-tx-p hidden sm:block">
-              DBAP
+              Buyer Portal
             </span>
           </div>
           <div className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1 border rounded-full font-semibold text-xs", roleDetails.color)}>

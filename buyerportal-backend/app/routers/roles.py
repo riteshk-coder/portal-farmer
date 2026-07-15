@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
-from app.models.user import User
+from app.models.user import User, RoleType
 from app.models.role import SystemRole, RolePermission
 from app.schemas.roles import RoleCreate, RoleUpdate, AssignRoleRequest, SystemRoleResponse, PermissionsUpdate
 from datetime import datetime
@@ -24,10 +24,40 @@ def create_role(
     if exists:
         raise HTTPException(status_code=400, detail="Role already exists")
     
-    r = SystemRole(name=body.name, description=body.description, updated_by=current_user.id)
+    r = SystemRole(
+        name=body.name,
+        description=body.description,
+        email=body.email.strip().lower() if body.email else None,
+        updated_by=current_user.id
+    )
     db.add(r)
     db.commit()
     db.refresh(r)
+
+    # Link/Auto-create user if email is provided
+    if body.email:
+        email = body.email.strip().lower()
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.system_role_id = r.id
+            user.employee_role = r.name
+            user.role_type = RoleType.mahafpc
+            db.commit()
+        else:
+            import random
+            name_parts = email.split("@")[0].split(".")
+            user_name = " ".join([p.capitalize() for p in name_parts])
+            new_user = User(
+                name=user_name,
+                email=email,
+                role_type=RoleType.mahafpc,
+                system_role_id=r.id,
+                employee_role=r.name,
+                employee_id=f"EMP-{random.randint(1000, 9999)}",
+                is_active=True
+            )
+            db.add(new_user)
+            db.commit()
 
     modules = ["Dashboard", "Users", "Roles", "Reports", "Settings", "Billing", "Audit Logs"]
     for m in modules:
@@ -61,9 +91,36 @@ def update_role(
 
     r.name = body.name
     r.description = body.description
+    r.email = body.email.strip().lower() if body.email else None
     r.updated_by = current_user.id
     r.updated_at = datetime.utcnow()
     db.commit()
+
+    # Re-sync user mapping if email is provided
+    if body.email:
+        email = body.email.strip().lower()
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.system_role_id = r.id
+            user.employee_role = r.name
+            user.role_type = RoleType.mahafpc
+            db.commit()
+        else:
+            import random
+            name_parts = email.split("@")[0].split(".")
+            user_name = " ".join([p.capitalize() for p in name_parts])
+            new_user = User(
+                name=user_name,
+                email=email,
+                role_type=RoleType.mahafpc,
+                system_role_id=r.id,
+                employee_role=r.name,
+                employee_id=f"EMP-{random.randint(1000, 9999)}",
+                is_active=True
+            )
+            db.add(new_user)
+            db.commit()
+
     return r
 
 @router.delete("/{id}")

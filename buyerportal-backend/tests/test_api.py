@@ -13,7 +13,7 @@ from app.models.escrow import FarmerSplit, LedgerEntry, SplitStatus, EntryType
 from app.models.notification import SystemLog
 from app.models.role import SystemRole, RolePermission
 from app.models.farmer import Farmer
-from app.core.security import hash_password
+from app.core.security import hash_password, create_access_token
 
 client = TestClient(app)
 
@@ -449,3 +449,122 @@ def test_passwordless_auth_system(setup_db):
     assert resp.status_code == 200
     assert "access_token" in resp.json()
     assert resp.json()["role"] == "admin"
+
+def test_buyer_matching_engine_low_score(setup_db):
+    db = SessionLocal()
+    buyer = db.query(Buyer).first()
+    assert buyer is not None
+
+    fpo_user = db.query(User).filter(User.role_type == RoleType.fpo).first()
+    assert fpo_user is not None
+    access_token = create_access_token(data={"sub": str(fpo_user.id)})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    lot_payload = {
+        "description": "Unknown Crop Low Quality",
+        "qty": 5.0,
+        "grade": "Grade C",
+        "priceExpectation": 100.0,
+        "location": "Chennai, TN",
+        "curcuminPercent": 1.5,
+        "harvestDate": "2026-03-01",
+        "notes": "Low score testing"
+    }
+    resp = client.post("/lots", headers=headers, data=lot_payload)
+    assert resp.status_code == 200
+    lot_id = resp.json()["id"]
+
+    resp_matches = client.get(f"/lots/{lot_id}/matches", headers=headers)
+    assert resp_matches.status_code == 200
+    matches_data = resp_matches.json()
+    assert len(matches_data) > 0
+    db.expire_all()
+    match_entry = db.query(LotMatch).filter(LotMatch.lot_id == lot_id).first()
+    assert match_entry is not None
+    assert match_entry.matching_path == "rule-based"
+    db.close()
+
+def test_scoring_recalculation_late_vs_timely_deposit(setup_db):
+    db = SessionLocal()
+    buyer = db.query(Buyer).first()
+    assert buyer is not None
+    initial_score = buyer.reliability_score
+
+    fpo_user = db.query(User).filter(User.role_type == RoleType.fpo).first()
+    access_token = create_access_token(data={"sub": str(fpo_user.id)})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    contract = Contract(
+        id="CON-TEST-1",
+        lot_id="LOT-T1",
+        buyer_id=buyer.id,
+        fpo_id=1,
+        qty=10.0,
+        price=120.0,
+        amount=12.0,
+        status=ContractStatus.signed,
+        fpo_signed=True,
+        buyer_signed=True,
+        escrow_status=EscrowStatus.pending_deposit,
+        created_at=datetime.utcnow()
+    )
+    db.add(contract)
+    db.commit()
+
+    resp = client.post(f"/contracts/{contract.id}/fund-escrow", headers=headers)
+    assert resp.status_code == 200
+    db.refresh(buyer)
+    assert buyer.reliability_score == min(100, initial_score + 2)
+
+    # Late deposit
+    contract_late = Contract(
+        id="CON-TEST-2",
+        lot_id="LOT-T1",
+        buyer_id=buyer.id,
+        fpo_id=1,
+        qty=10.0,
+        price=120.0,
+        amount=12.0,
+        status=ContractStatus.signed,
+        fpo_signed=True,
+        buyer_signed=True,
+        escrow_status=EscrowStatus.pending_deposit,
+        created_at=datetime.utcnow() - timedelta(hours=50)
+    )
+    db.add(contract_late)
+    db.commit()
+
+    resp = client.post(f"/contracts/{contract_late.id}/fund-escrow", headers=headers)
+    assert resp.status_code == 200
+    db.refresh(buyer)
+    assert buyer.reliability_score == max(50, min(100, initial_score + 2) - 5)
+    db.close()
+
+def test_scoring_recalculation_dispute_lost(setup_db):
+    db = SessionLocal()
+    buyer = db.query(Buyer).first()
+    assert buyer is not None
+    initial_score = buyer.reliability_score
+
+    admin_user = db.query(User).filter(User.role_type == RoleType.mahafpc).first()
+    assert admin_user is not None
+    access_token = create_access_token(data={"sub": str(admin_user.id)})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    dispute = Dispute(
+        id="DSP-TEST-MATCH",
+        type=DisputeType.quality_mismatch,
+        lot_id="LOT-T1",
+        buyer_id=buyer.id,
+        fpo_id=1,
+        description="Testing dispute score deduction",
+        status=DisputeStatus.pending
+    )
+    db.add(dispute)
+    db.commit()
+
+    resp = client.post(f"/disputes/{dispute.id}/resolve", headers=headers)
+    assert resp.status_code == 200
+    db.refresh(buyer)
+    assert buyer.reliability_score == max(40, initial_score - 10)
+    db.close()

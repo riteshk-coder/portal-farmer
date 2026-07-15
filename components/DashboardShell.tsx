@@ -98,11 +98,11 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({ children }) => {
           shortName: "MahaFPC",
           color: "text-gry-m bg-gry-bg border-gry-m/20",
           icon: <IconBuilding className="w-4 h-4 text-gry-m" />,
-          tabs: ["Overview", "All transactions", "Reports", "Buyer scores", "FPO ratings", "Disputes", "Archive", "Roles & Permissions"],
+          tabs: ["Overview", "All transactions", "Reports", "Buyer scores", "FPO ratings", "Disputes", "Archive", "Roles & Permissions", "Member Directory"],
           groups: [
             { title: "Regulation", tabs: ["Overview", "All transactions", "Reports"] },
             { title: "Compliance", tabs: ["Buyer scores", "FPO ratings", "Disputes", "Archive"] },
-            { title: "Admin", tabs: ["Roles & Permissions"] },
+            { title: "Admin", tabs: ["Roles & Permissions", "Member Directory"] },
           ],
           userName: defaultName,
           userEmail: sessionUser.email || "governance@mahafpc.in",

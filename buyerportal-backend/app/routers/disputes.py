@@ -72,6 +72,12 @@ def resolve_dispute(
             raise HTTPException(status_code=404, detail="Dispute not found")
         
         d.status = DisputeStatus.resolved
+        
+        # G12/Scoring: dispute lost (-10) for buyer
+        if d.buyer:
+            from app.services.scoring_service import recalculate_buyer_score
+            recalculate_buyer_score(d.buyer, db, "dispute_lost")
+
         d.updated_by = current_user.id
         d.updated_at = datetime.utcnow()
         db.commit()

@@ -6,10 +6,12 @@ from app.schemas.base import BaseSchema
 class RoleCreateRequest(BaseSchema):
     name: str
     description: Optional[str] = None
+    email: Optional[str] = None
 
 class RoleUpdateRequest(BaseSchema):
     name: str
     description: Optional[str] = None
+    email: Optional[str] = None
 
 class PermissionActionsSchema(BaseSchema):
     view: bool = False
@@ -24,6 +26,7 @@ class RoleResponse(BaseSchema):
     id: int
     name: str
     description: Optional[str] = None
+    email: Optional[str] = None
     is_superadmin: bool = Field(..., serialization_alias="is_superadmin")  # Snake case in frontend
     users_assigned: int = Field(0, serialization_alias="usersAssigned")
     created_at: datetime = Field(..., serialization_alias="created")  # Maps created_at to 'created' in frontend

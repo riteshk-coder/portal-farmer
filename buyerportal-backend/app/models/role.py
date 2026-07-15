@@ -8,6 +8,7 @@ class SystemRole(Base):
     name = Column(String, unique=True, nullable=False)
     description = Column(String)
     is_superadmin = Column(Boolean, default=False)
+    email = Column(String, nullable=True)
     users_assigned = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)

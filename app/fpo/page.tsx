@@ -17,6 +17,7 @@ import {
   IconReceipt,
   IconTruck,
   IconWallet,
+  IconBook,
 } from "@tabler/icons-react";
 
 export default function FpoDashboard() {
@@ -86,7 +87,8 @@ export default function FpoDashboard() {
 
   // Views rendering
   const renderOverview = () => {
-    const activeLots = lots.filter((l) => l.status !== "Delivered").slice(0, 4);
+    const activeLots = lots.filter((l) => l.status !== "Delivered" && l.status !== "GRN Issued").slice(0, 4);
+    const activeShipments = contracts.filter((c) => c.status === "Signed" && c.escrowStatus === "Deposited" && !c.grnNumber);
 
     return (
       <div className="space-y-6">
@@ -95,11 +97,72 @@ export default function FpoDashboard() {
           subtitle="Crop supply, matches, and payouts dashboard"
         />
 
+        {/* Onboarding Banner for New Users */}
+        {lots.length === 0 && (
+          <div className="bg-gradient-to-r from-teal-bg to-bg-s border border-primary/20 rounded-2xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
+                <span>Welcome to Buyer Portal Onboarding!</span>
+              </h3>
+              <p className="text-xs text-tx-s max-w-2xl leading-relaxed">
+                Logically, first-time users have zero active trade transactions. We have prepared an onboarding guide explaining how to list lots, negotiate with buyers, and secure farmer payouts.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => openModal("user-guide")}
+              className="text-xs font-semibold px-4 whitespace-nowrap"
+            >
+              Open Quick Start Guide
+            </Button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <KpiCard label="Active lots" value="7" sub="This week" trend="up" trendValue="+2" icon={<IconPackage className="w-5 h-5" />} accentColor="#0F766E" iconBg="#CCFBF1" onClick={() => setActiveTabForRole("fpo", "My lots")} />
-          <KpiCard label="Pending quotes" value="4" sub="2 counter-offers" trend="neutral" trendValue="Active" icon={<IconReceipt className="w-5 h-5" />} accentColor="#F59E0B" iconBg="#FFFBEB" onClick={() => setActiveTabForRole("fpo", "Quotes")} />
-          <KpiCard label="Dispatched" value="3" sub="In transit" trend="up" trendValue="On track" icon={<IconTruck className="w-5 h-5" />} accentColor="#6366F1" iconBg="#EEF2FF" onClick={() => setActiveTabForRole("fpo", "Contracts")} />
-          <KpiCard label="Payout due" value="₹4.2L" sub="Est. this month" trend="up" trendValue="+12%" icon={<IconWallet className="w-5 h-5" />} accentColor="#22C55E" iconBg="#F0FDF4" onClick={() => setActiveTabForRole("fpo", "Payouts")} />
+          <KpiCard
+            label="Active lots"
+            value={lots.filter((l) => l.status !== "Delivered" && l.status !== "GRN Issued").length.toString()}
+            sub="Live listings"
+            trend="neutral"
+            trendValue="Active"
+            icon={<IconPackage className="w-5 h-5" />}
+            accentColor="#0F766E"
+            iconBg="#CCFBF1"
+            onClick={() => setActiveTabForRole("fpo", "My lots")}
+          />
+          <KpiCard
+            label="Pending quotes"
+            value={quotes.filter((q) => q.status === "Awaiting response" || q.status === "Counter-offer").length.toString()}
+            sub="Awaiting response"
+            trend="neutral"
+            trendValue="Active"
+            icon={<IconReceipt className="w-5 h-5" />}
+            accentColor="#F59E0B"
+            iconBg="#FFFBEB"
+            onClick={() => setActiveTabForRole("fpo", "Quotes")}
+          />
+          <KpiCard
+            label="Dispatched"
+            value={contracts.filter((c) => c.status === "Signed" && c.escrowStatus === "Deposited").length.toString()}
+            sub="In transit"
+            trend="neutral"
+            trendValue="On track"
+            icon={<IconTruck className="w-5 h-5" />}
+            accentColor="#6366F1"
+            iconBg="#EEF2FF"
+            onClick={() => setActiveTabForRole("fpo", "Contracts")}
+          />
+          <KpiCard
+            label="Payout due"
+            value={`₹${(splits.filter((s) => s.status === "Pending").reduce((acc, s) => acc + s.amount, 0) / 100000).toFixed(2)}L`}
+            sub="Farmer splits"
+            trend="neutral"
+            trendValue="Pending"
+            icon={<IconWallet className="w-5 h-5" />}
+            accentColor="#22C55E"
+            iconBg="#F0FDF4"
+            onClick={() => setActiveTabForRole("fpo", "Payouts")}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -115,15 +178,21 @@ export default function FpoDashboard() {
               }
             >
               <div className="divide-y divide-bd-t">
-                {activeLots.map((l) => (
-                  <div key={l.id} className="py-2.5 flex items-center justify-between first:pt-0 last:pb-0 text-[12px]">
-                    <span className="font-bold text-tx-p font-mono text-[12px] min-w-[72px]">{l.id}</span>
-                    <span className="flex-1 text-tx-s font-semibold">
-                      {l.qty} MT &middot; {l.description} ({l.grade})
-                    </span>
-                    <Pill status={l.status} />
+                {activeLots.length === 0 ? (
+                  <div className="text-center py-8 text-tx-t text-xs font-semibold border border-dashed border-bd-t rounded-xl">
+                    No active trade lots registered.
                   </div>
-                ))}
+                ) : (
+                  activeLots.map((l) => (
+                    <div key={l.id} className="py-2.5 flex items-center justify-between first:pt-0 last:pb-0 text-[12px]">
+                      <span className="font-bold text-tx-p font-mono text-[12px] min-w-[72px]">{l.id}</span>
+                      <span className="flex-1 text-tx-s font-semibold">
+                        {l.qty} MT &middot; {l.description} ({l.grade})
+                      </span>
+                      <Pill status={l.status} />
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
 
@@ -134,21 +203,23 @@ export default function FpoDashboard() {
             {/* Shipment tracker */}
             <Card title="Shipment tracker" subtitle="Live tracking from warehouse to buyer">
               <div className="space-y-3.5">
-                {[
-                  { id: "LOT-2839", dest: "R.K. Traders Pvt. Ltd", day: "3/5", pct: "60%" },
-                  { id: "LOT-2837", dest: "Spice Exports Ltd", day: "5/5", pct: "96%" },
-                  { id: "LOT-2835", dest: "Agmark Foods", day: "1/5", pct: "18%" },
-                ].map((track) => (
-                  <div key={track.id} className="text-[12px] font-semibold">
-                    <div className="flex justify-between text-tx-s">
-                      <span>{track.id} &rarr; {track.dest}</span>
-                      <span>Day {track.day}</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-bd-t mt-1.5 overflow-hidden">
-                      <div className="h-full rounded-full bg-teal-accent" style={{ width: track.pct }} />
-                    </div>
+                {activeShipments.length === 0 ? (
+                  <div className="text-center py-8 text-tx-t text-xs font-semibold border border-dashed border-bd-t rounded-xl">
+                    No active shipments in transit.
                   </div>
-                ))}
+                ) : (
+                  activeShipments.map((track) => (
+                    <div key={track.id} className="text-[12px] font-semibold">
+                      <div className="flex justify-between text-tx-s">
+                        <span>{track.lotId} &rarr; {track.buyerName}</span>
+                        <span>In Transit</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-bd-t mt-1.5 overflow-hidden">
+                        <div className="h-full rounded-full bg-teal-accent" style={{ width: "65%" }} />
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
 
@@ -474,6 +545,14 @@ export default function FpoDashboard() {
                       </thead>
                       <tbody className="divide-y divide-bd-t text-[12px] font-semibold">
                         {l.matches?.map((m, idx) => {
+                          // Find active quote from database
+                          const realQuote = quotes.find(
+                            (q) =>
+                              q.lotId === l.id &&
+                              q.buyerName === m.buyerName &&
+                              q.status !== "Rejected"
+                          );
+
                           // Determine reliability score styling
                           let reliabilityBg = "bg-teal-bg text-teal-accent border-teal-m/30";
                           if (m.matchScore < 80) {
@@ -490,7 +569,9 @@ export default function FpoDashboard() {
                           return (
                             <tr key={idx} className="text-tx-p hover:bg-bg-s/30 transition-colors">
                               <td className="px-4 py-3 font-bold">{m.buyerName}</td>
-                              <td className="px-4 py-3 text-right font-bold pr-12 text-tx-p">₹{m.offeredPrice}</td>
+                              <td className="px-4 py-3 text-right font-bold pr-12 text-tx-p">
+                                {realQuote ? `₹${realQuote.price}/kg` : <span className="text-tx-t text-xs font-normal italic">No offer yet</span>}
+                              </td>
                               <td className="px-4 py-3 text-center">
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold border ${reliabilityBg}`}>
                                   {m.matchScore} / 100
@@ -499,46 +580,35 @@ export default function FpoDashboard() {
                               <td className="px-4 py-3 text-tx-s font-medium">{city}</td>
                               <td className="px-4 py-3 text-center">
                                 <div className="flex justify-center items-center gap-2">
-                                  {idx === 0 ? (
-                                    <button
-                                      onClick={() => {
-                                        showToast(`Bid accepted! Contract generated for ${m.buyerName}`, "success");
-                                        respondToQuote("QT-203", "accept");
-                                        setActiveTabForRole("fpo", "Contracts");
-                                      }}
-                                      className="bg-teal-accent hover:bg-teal-m text-white px-3.5 py-0.5 rounded text-[11px] font-bold shadow-sm transition-all"
-                                    >
-                                      Accept
-                                    </button>
-                                  ) : idx === 1 ? (
-                                    <button
-                                      onClick={() => {
-                                        showToast(`Initiating counter offer for ${m.buyerName}`, "info");
-                                        openModal("quote-response", {
-                                          quote: {
-                                            id: "QT-202",
-                                            lotId: l.id,
-                                            lotDescription: l.description,
-                                            buyerName: m.buyerName,
-                                            price: m.offeredPrice,
-                                            qty: l.qty,
-                                            status: "Counter-offer",
-                                          },
-                                        });
-                                      }}
-                                      className="bg-bg-p border border-bd-s hover:bg-bg-t text-tx-p px-3.5 py-0.5 rounded text-[11px] font-bold transition-all"
-                                    >
-                                      Counter
-                                    </button>
+                                  {realQuote ? (
+                                    <>
+                                      {realQuote.status === "Awaiting response" || realQuote.status === "Counter-offer" || realQuote.status === "Negotiating" ? (
+                                        <>
+                                          <button
+                                            onClick={async () => {
+                                              showToast(`Accepting bid and generating contract for ${m.buyerName}...`, "info");
+                                              await respondToQuote(realQuote.id, "accept");
+                                              setActiveTabForRole("fpo", "Contracts");
+                                            }}
+                                            className="bg-teal-accent hover:bg-teal-m text-white px-3.5 py-0.5 rounded text-[11px] font-bold shadow-sm transition-all shadow-teal-m/20"
+                                          >
+                                            Accept
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              openModal("quote-response", { quote: realQuote });
+                                            }}
+                                            className="bg-bg-p border border-bd-s hover:bg-bg-t text-tx-p px-3.5 py-0.5 rounded text-[11px] font-bold transition-all"
+                                          >
+                                            Counter
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <span className="text-xs text-tx-s font-bold capitalize">{realQuote.status}</span>
+                                      )}
+                                    </>
                                   ) : (
-                                    <button
-                                      onClick={() => {
-                                        showToast(`Viewing matched record for ${m.buyerName}`, "info");
-                                      }}
-                                      className="bg-bg-p border border-bd-s hover:bg-bg-t text-tx-p px-3.5 py-0.5 rounded text-[11px] font-bold transition-all"
-                                    >
-                                      View
-                                    </button>
+                                    <span className="text-tx-t text-xs font-semibold italic">Awaiting bid</span>
                                   )}
                                 </div>
                               </td>

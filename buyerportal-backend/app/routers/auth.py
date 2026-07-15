@@ -174,7 +174,11 @@ def login_google(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
     if role == "fpo-farmer":
         role = "fpo"
         
-    user = db.query(User).filter(User.email == email, User.role_type == role).first()
+    user = None
+    if role == "admin":
+        user = db.query(User).filter(User.email == email, User.role_type.in_([RoleType.admin, RoleType.mahafpc])).first()
+    else:
+        user = db.query(User).filter(User.email == email, User.role_type == role).first()
     
     # Admin invite matching logic
     if not user and role == "admin":
@@ -344,3 +348,53 @@ def delete_member(member_id: int, current_user: User = Depends(get_current_user)
     db.delete(member)
     db.commit()
     return {"message": "Member removed successfully."}
+
+@router.get("/directory")
+def get_directory(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if current_user.role_type not in [RoleType.mahafpc, RoleType.admin]:
+        raise HTTPException(status_code=403, detail="Not authorized to view system directory.")
+        
+    users = db.query(User).all()
+    fpos = db.query(Fpo).all()
+    buyers = db.query(Buyer).all()
+    
+    return {
+        "users": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "roleType": u.role_type.value,
+                "employeeRole": u.employee_role or "",
+                "employeeId": u.employee_id or "",
+                "mobile": u.mobile or "",
+                "isActive": u.is_active
+            }
+            for u in users
+        ],
+        "fpos": [
+            {
+                "id": f.id,
+                "name": f.name,
+                "location": f.location or "",
+                "membersCount": f.members_count,
+                "gradeConformance": f.grade_conformance,
+                "rating": f.rating,
+                "reliabilityScore": f.reliability_score
+            }
+            for f in fpos
+        ],
+        "buyers": [
+            {
+                "id": b.id,
+                "name": b.name,
+                "location": b.location or "",
+                "reliabilityScore": b.reliability_score,
+                "paymentDaysAvg": b.payment_days_avg,
+                "volumeTraded": b.volume_traded,
+                "companyName": b.company_name or "",
+                "businessType": b.business_type or ""
+            }
+            for b in buyers
+        ]
+    }

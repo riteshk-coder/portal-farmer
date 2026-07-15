@@ -18,6 +18,9 @@ export interface Lot {
     matchScore: number; // percentage
     offeredPrice: number;
   }[];
+  curcuminPercent?: number;
+  harvestDate?: string;
+  notes?: string;
 }
 
 export interface Quote {
@@ -45,6 +48,7 @@ export interface Contract {
   fpoSigned: boolean;
   buyerSigned: boolean;
   escrowStatus: "Pending Deposit" | "Deposited" | "Released";
+  grnNumber?: string;
 }
 
 export interface Dispute {
@@ -93,6 +97,7 @@ export interface SystemRole {
   id: number;
   name: string;
   description: string;
+  email?: string;
   is_superadmin: boolean;
   usersAssigned: number;
   created: string;
@@ -116,7 +121,7 @@ interface AppContextType {
   ledger: LedgerEntry[];
   toasts: Toast[];
   modal: {
-    type: "quote-response" | "buyer-quote" | "buyer-counter" | "fpo-counter" | "buyer-esign" | "user-profile" | "buyer-lot-details" | null;
+    type: "quote-response" | "buyer-quote" | "buyer-counter" | "fpo-counter" | "buyer-esign" | "user-profile" | "buyer-lot-details" | "user-guide" | null;
     data: any;
   };
   loginAsRole: (role: Role) => void;
@@ -131,8 +136,8 @@ interface AppContextType {
   roles: SystemRole[];
   permissions: Record<number, RolePermissions>;
   currentUserRoleId: number | null;
-  createRole: (name: string, description: string) => void;
-  updateRole: (id: number, name: string, description: string) => void;
+  createRole: (name: string, description: string, email?: string) => void;
+  updateRole: (id: number, name: string, description: string, email?: string) => void;
   deleteRole: (id: number) => void;
   savePermissions: (roleId: number, perms: RolePermissions) => void;
   assignUserRole: (roleId: number | null) => void;
@@ -151,262 +156,16 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Initial Mock Data
-const initialLots: Lot[] = [
-  {
-    id: "LOT-2841",
-    description: "Erode finger turmeric",
-    qty: 12,
-    grade: "A",
-    status: "Matched",
-    priceExpectation: 134,
-    location: "Nashik, MH",
-    fpoName: "Nashik Agro FPO",
-    createdAt: "10 min ago",
-    matches: [
-      { buyerName: "R.K. Traders Pvt. Ltd", matchScore: 91, offeredPrice: 131 },
-      { buyerName: "Spice Exports Ltd", matchScore: 85, offeredPrice: 131 },
-      { buyerName: "Agmark Foods", matchScore: 72, offeredPrice: 128 },
-    ],
-  },
-  {
-    id: "LOT-2842",
-    description: "Salem bulb turmeric",
-    qty: 8.5,
-    grade: "B",
-    status: "Quoting",
-    priceExpectation: 130,
-    location: "Salem, TN",
-    fpoName: "Nashik Agro FPO",
-    createdAt: "1 day ago",
-  },
-  {
-    id: "LOT-2843",
-    description: "Nizamabad premium",
-    qty: 20,
-    grade: "Premium",
-    status: "Pending match",
-    priceExpectation: 132,
-    location: "Nizamabad, TS",
-    fpoName: "Nashik Agro FPO",
-    createdAt: "8 min ago",
-  },
-  {
-    id: "LOT-2844",
-    description: "Erode finger turmeric",
-    qty: 5,
-    grade: "B",
-    status: "Counter-offer",
-    priceExpectation: 128,
-    location: "Nashik, MH",
-    fpoName: "Nashik Agro FPO",
-    createdAt: "1 hour ago",
-  },
-  {
-    id: "LOT-2839",
-    description: "Erode finger turmeric",
-    qty: 12,
-    grade: "A",
-    status: "Dispatched",
-    priceExpectation: 134,
-    location: "Nashik, MH",
-    fpoName: "Nashik Agro FPO",
-    createdAt: "4 days ago",
-  },
-  {
-    id: "LOT-2837",
-    description: "Salem finger turmeric",
-    qty: 8.8,
-    grade: "B",
-    status: "Dispatched",
-    priceExpectation: 131,
-    location: "Salem, TN",
-    fpoName: "Nashik Agro FPO",
-    createdAt: "5 days ago",
-  },
-  {
-    id: "LOT-2835",
-    description: "Nizamabad premium",
-    qty: 7,
-    grade: "Premium",
-    status: "Dispatched",
-    priceExpectation: 128,
-    location: "Nizamabad, TS",
-    fpoName: "Nashik Agro FPO",
-    createdAt: "6 days ago",
-  },
-];
-
-const initialQuotes: Quote[] = [
-  {
-    id: "QT-201",
-    lotId: "LOT-2842",
-    lotDescription: "Salem bulb turmeric",
-    buyerName: "R.K. Traders Pvt. Ltd",
-    price: 129,
-    qty: 8.5,
-    status: "Awaiting response",
-    message: "Immediate pickup available.",
-  },
-  {
-    id: "QT-202",
-    lotId: "LOT-2844",
-    lotDescription: "Erode finger turmeric",
-    buyerName: "Spice Exports Ltd",
-    price: 125,
-    qty: 5,
-    status: "Counter-offer",
-    counterBy: "Buyer",
-    message: "Our best offer for Grade B finger lot.",
-  },
-  {
-    id: "QT-203",
-    lotId: "LOT-2841",
-    lotDescription: "Erode finger turmeric",
-    buyerName: "Agmark Foods",
-    price: 128,
-    qty: 12,
-    status: "Accepted",
-    message: "Contract CNT-0092 generated.",
-  },
-];
-
-const initialContracts: Contract[] = [
-  {
-    id: "CNT-0091",
-    lotId: "LOT-2839",
-    lotDescription: "Erode finger turmeric (12 MT)",
-    buyerName: "R.K. Traders Pvt. Ltd",
-    fpoName: "Nashik Agro FPO",
-    qty: 12,
-    price: 134,
-    amount: 16.08,
-    status: "eSign pending",
-    fpoSigned: true,
-    buyerSigned: false,
-    escrowStatus: "Pending Deposit",
-  },
-  {
-    id: "CNT-0090",
-    lotId: "LOT-2837",
-    lotDescription: "Salem finger turmeric (8.8 MT)",
-    buyerName: "Spice Exports Ltd",
-    fpoName: "Nashik Agro FPO",
-    qty: 8.8,
-    price: 131,
-    amount: 11.5,
-    status: "Signed",
-    fpoSigned: true,
-    buyerSigned: true,
-    escrowStatus: "Deposited",
-  },
-  {
-    id: "CNT-0088",
-    lotId: "LOT-2835",
-    lotDescription: "Nizamabad premium (7 MT)",
-    buyerName: "Agmark Foods",
-    fpoName: "Nashik Agro FPO",
-    qty: 7,
-    price: 127,
-    amount: 8.9,
-    status: "Signed",
-    fpoSigned: true,
-    buyerSigned: true,
-    escrowStatus: "Released",
-  },
-];
-
-const initialDisputes: Dispute[] = [
-  {
-    id: "DSP-004",
-    type: "Quality mismatch",
-    lotId: "LOT-2831",
-    buyerName: "Agmark Foods",
-    fpoName: "Pune Agro FPO",
-    description: "Curcumin below specification standard. Expected 4.5%, tested 3.8%.",
-    status: "Review",
-    filedAt: "3 days ago",
-  },
-  {
-    id: "DSP-005",
-    type: "Payment delay",
-    lotId: "LOT-2829",
-    buyerName: "NutriTrade Co.",
-    fpoName: "Salem Farmers FPO",
-    description: "Escrow funds deposit timeline exceeded by 48 hours.",
-    status: "Pending",
-    filedAt: "5 days ago",
-  },
-];
-
-const initialLogs: SystemLog[] = [
-  {
-    id: "LOG-001",
-    channel: "WhatsApp",
-    recipient: "+91 98452 10293 (Nashik Agro FPO)",
-    message: "New AI Buyer Match found for Erode finger turmeric (LOT-2841). R.K. Traders Pvt. Ltd matched with 91% confidence score.",
-    timestamp: "10 min ago",
-  },
-  {
-    id: "LOG-002",
-    channel: "Email",
-    recipient: "purchase@rktraders.in",
-    message: "Agronomic Alert: Nizamabad premium turmeric (LOT-2843) uploaded. Fits your curcumin requirement criteria. WhatsApp alert dispatched.",
-    timestamp: "8 mins ago",
-  },
-  {
-    id: "LOG-003",
-    channel: "System",
-    recipient: "Escrow Daemon",
-    message: "Auto-generated contract CNT-0091 for LOT-2839 uploaded to vault.",
-    timestamp: "1 day ago",
-  },
-];
-
-const initialSplits: FarmerSplit[] = [
-  { lotId: "LOT-2837", farmerName: "Ramesh Patil", sharePercent: 28, amount: 225000, status: "Paid" },
-  { lotId: "LOT-2837", farmerName: "Suresh Jadhav", sharePercent: 22, amount: 177000, status: "Paid" },
-  { lotId: "LOT-2837", farmerName: "Priya Kulkarni", sharePercent: 17, amount: 137000, status: "Paid" },
-  { lotId: "LOT-2837", farmerName: "Ganesh More", sharePercent: 33, amount: 266000, status: "Paid" },
-];
-
-const initialLedger: LedgerEntry[] = [
-  {
-    id: "TXN-9021",
-    contractId: "CNT-0091",
-    type: "Credit",
-    party: "R.K. Traders Pvt. Ltd",
-    amount: 1608000,
-    timestamp: "2 days ago",
-  },
-];
-
-const initialRoles: SystemRole[] = [
-  { id: 1, name: "Superadmin", description: "Full system access", is_superadmin: true, usersAssigned: 2, created: "Jan 1, 2024" },
-  { id: 2, name: "Manager", description: "Manages users and reports", is_superadmin: false, usersAssigned: 5, created: "Mar 10, 2024" },
-  { id: 3, name: "Viewer", description: "Read-only access", is_superadmin: false, usersAssigned: 0, created: "Apr 22, 2024" },
-];
-
-const initialPermissions: Record<number, RolePermissions> = {
-  2: {
-    Dashboard:    { view: true,  add: false, edit: false, delete: false },
-    Users:        { view: true,  add: true,  edit: true,  delete: false },
-    Roles:        { view: true,  add: false, edit: false, delete: false },
-    Reports:      { view: true,  add: false, edit: false, delete: false },
-    Settings:     { view: false, add: false, edit: false, delete: false },
-    Billing:      { view: false, add: false, edit: false, delete: false },
-    "Audit Logs": { view: true,  add: false, edit: false, delete: false },
-  },
-  3: {
-    Dashboard:    { view: true,  add: false, edit: false, delete: false },
-    Users:        { view: true,  add: false, edit: false, delete: false },
-    Roles:        { view: false, add: false, edit: false, delete: false },
-    Reports:      { view: true,  add: false, edit: false, delete: false },
-    Settings:     { view: false, add: false, edit: false, delete: false },
-    Billing:      { view: false, add: false, edit: false, delete: false },
-    "Audit Logs": { view: false, add: false, edit: false, delete: false },
-  },
-};
+// Initial Mock Data (Empty for clean initial state)
+const initialLots: Lot[] = [];
+const initialQuotes: Quote[] = [];
+const initialContracts: Contract[] = [];
+const initialDisputes: Dispute[] = [];
+const initialLogs: SystemLog[] = [];
+const initialSplits: FarmerSplit[] = [];
+const initialLedger: LedgerEntry[] = [];
+const initialRoles: SystemRole[] = [];
+const initialPermissions: Record<number, RolePermissions> = {};
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentRole, setCurrentRole] = useState<Role | null>(null);
@@ -421,8 +180,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [roles, setRoles] = useState<SystemRole[]>(initialRoles);
   const [permissions, setPermissions] = useState<Record<number, RolePermissions>>(initialPermissions);
   const [currentUserRoleId, setCurrentUserRoleId] = useState<number | null>(2); // Manager by default
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
-  // State arrays representing client-side mock databases
+  // State arrays representing client-side databases synced with backend
   const [lots, setLots] = useState<Lot[]>(initialLots);
   const [quotes, setQuotes] = useState<Quote[]>(initialQuotes);
   const [contracts, setContracts] = useState<Contract[]>(initialContracts);
@@ -461,6 +221,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = () => {
     setCurrentRole(null);
+    setCurrentUserId(null);
+    setCurrentUserRoleId(null);
     if (typeof window !== "undefined") {
       localStorage.removeItem("token");
       localStorage.removeItem("user_role");
@@ -474,483 +236,440 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTabs((prev) => ({ ...prev, [role]: tab }));
   };
 
-  // Trigger simulated AI matching for new lots
-  const runAiMatching = (newLot: Lot) => {
-    // Stage 1: Add to AI Matching queue logs
-    const l1: SystemLog = {
-      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-      channel: "System",
-      recipient: "AI Matching Core",
-      message: `Scanning buyers for ${newLot.id} (${newLot.qty} MT, ${newLot.grade}) with price expectation ₹${newLot.priceExpectation}/kg.`,
-      timestamp: "Just now",
-    };
-    setLogs((prev) => [l1, ...prev]);
+  // Sync data with backend API
+  const fetchDataFromBackend = async () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) return;
 
-    // Simulate standard delay
-    setTimeout(() => {
-      setLots((prevLots) =>
-        prevLots.map((l) => {
-          if (l.id === newLot.id) {
-            // update status and generate matches
-            const generatedMatches = [
-              { buyerName: "R.K. Traders", matchScore: 92, offeredPrice: newLot.priceExpectation - 2 },
-              { buyerName: "Spice Exports", matchScore: 87, offeredPrice: newLot.priceExpectation - 4 },
-              { buyerName: "Agmark Foods", matchScore: 82, offeredPrice: newLot.priceExpectation - 5 },
-            ];
-            return {
-              ...l,
-              status: "Matched",
-              matches: generatedMatches,
-            };
+    try {
+      const headers = { "Authorization": `Bearer ${token}` };
+
+      // Fetch User Info
+      const resMe = await fetch("http://localhost:8000/auth/me", { headers });
+      if (resMe.ok) {
+        const meData = await resMe.json();
+        setCurrentUserId(meData.id);
+        setCurrentUserRoleId(meData.system_role_id);
+      }
+
+      // Fetch Lots
+      const resLots = await fetch("http://localhost:8000/lots", { headers });
+      if (resLots.ok) setLots(await resLots.json());
+
+      // Fetch Quotes
+      const resQuotes = await fetch("http://localhost:8000/quotes", { headers });
+      if (resQuotes.ok) setQuotes(await resQuotes.json());
+
+      // Fetch Contracts
+      const resContracts = await fetch("http://localhost:8000/contracts", { headers });
+      if (resContracts.ok) setContracts(await resContracts.json());
+
+      // Fetch Disputes
+      const resDisputes = await fetch("http://localhost:8000/disputes", { headers });
+      if (resDisputes.ok) setDisputes(await resDisputes.json());
+
+      // Fetch Logs
+      const resLogs = await fetch("http://localhost:8000/logs", { headers });
+      if (resLogs.ok) setLogs(await resLogs.json());
+
+      // Fetch Ledger
+      const resLedger = await fetch("http://localhost:8000/escrow/ledger", { headers });
+      if (resLedger.ok) setLedger(await resLedger.json());
+
+      // Fetch Splits
+      const resSplits = await fetch("http://localhost:8000/escrow/farmer-splits", { headers });
+      if (resSplits.ok) setSplits(await resSplits.json());
+
+      // Fetch Roles
+      const resRoles = await fetch("http://localhost:8000/roles", { headers });
+      if (resRoles.ok) {
+        const rolesData = await resRoles.json();
+        setRoles(rolesData);
+
+        const permsMap: Record<number, RolePermissions> = {};
+        for (const r of rolesData) {
+          const resPerms = await fetch(`http://localhost:8000/roles/${r.id}/permissions`, { headers });
+          if (resPerms.ok) {
+            permsMap[r.id] = await resPerms.json();
           }
-          return l;
-        })
-      );
-
-      // Log success matching
-      const l2: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "WhatsApp",
-        recipient: `+91 99000 12345 (${newLot.fpoName})`,
-        message: `AI Matching Complete for ${newLot.id}: 3 buyers matching > 80% found. Top match: R.K. Traders.`,
-        timestamp: "Just now",
-      };
-      const l3: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "Email",
-        recipient: "purchase@rktraders.in",
-        message: `Alert: New lot ${newLot.id} meets your procurement requirements. Expected price: ₹${newLot.priceExpectation}/kg.`,
-        timestamp: "Just now",
-      };
-      setLogs((prev) => [l2, l3, ...prev]);
-      showToast(`AI Matching completed for ${newLot.id}! matches found.`, "info");
-    }, 2500);
+        }
+        setPermissions(permsMap);
+      }
+    } catch (err) {
+      console.error("Failed to load backend data:", err);
+    }
   };
+
+  useEffect(() => {
+    const savedRole = typeof window !== "undefined" ? localStorage.getItem("user_role") : null;
+    if (savedRole && !currentRole) {
+      setCurrentRole(savedRole as any);
+    }
+
+    if (currentRole || savedRole) {
+      fetchDataFromBackend();
+    }
+  }, [currentRole]);
 
   // Actions
-  const uploadLot = (lotData: Omit<Lot, "id" | "status" | "createdAt" | "fpoName">) => {
-    const lotId = `LOT-${Math.floor(2845 + Math.random() * 1000)}`;
-    const newLot: Lot = {
-      ...lotData,
-      id: lotId,
-      status: "Pending match",
-      fpoName: "Nashik Agro FPO", // Hardcoded user FPO for demo
-      createdAt: "Just now",
-    };
+  const uploadLot = async (lotData: Omit<Lot, "id" | "status" | "createdAt" | "fpoName">) => {
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("description", lotData.description);
+      formData.append("qty", lotData.qty.toString());
+      formData.append("grade", lotData.grade);
+      formData.append("priceExpectation", lotData.priceExpectation.toString());
+      if (lotData.location) formData.append("location", lotData.location);
 
-    setLots((prev) => [newLot, ...prev]);
-    showToast(`${lotId} uploaded · AI matching started`, "success");
+      const curcumin = (lotData as any).curcuminPercent || (lotData as any).curcumin_percent || 4.0;
+      formData.append("curcuminPercent", curcumin.toString());
 
-    // run matching simulation
-    runAiMatching(newLot);
-  };
+      const harvest = (lotData as any).harvestDate || (lotData as any).harvest_date || new Date().toISOString().split("T")[0];
+      formData.append("harvestDate", harvest);
 
-  const submitBuyerQuote = (lotId: string, price: number, qty: number, msg?: string) => {
-    const quoteId = `QT-${Math.floor(205 + Math.random() * 100)}`;
-    const lot = lots.find((l) => l.id === lotId);
-    
-    const newQuote: Quote = {
-      id: quoteId,
-      lotId,
-      lotDescription: lot?.description || "Finger turmeric",
-      buyerName: "Spice Exports Ltd", // Demo buyer
-      price,
-      qty,
-      status: "Awaiting response",
-      message: msg || "Premium bid for high curcumin lot.",
-    };
+      if (lotData.notes) formData.append("notes", lotData.notes);
 
-    setQuotes((prev) => [newQuote, ...prev]);
-    
-    // Update lot status to Quoting
-    setLots((prev) =>
-      prev.map((l) => (l.id === lotId ? { ...l, status: "Quoting" } : l))
-    );
+      const res = await fetch("http://localhost:8000/lots", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
+        body: formData
+      });
 
-    // AI Notification
-    const newLog: SystemLog = {
-      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-      channel: "System",
-      recipient: "FPO Notifications",
-      message: `Buyer Spice Exports submitted a bid of ₹${price}/kg for ${lotId}. Notification sent via SMS.`,
-      timestamp: "Just now",
-    };
-    setLogs((prev) => [newLog, ...prev]);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to upload lot.");
+      }
 
-    showToast(`Quote ${quoteId} submitted successfully for ₹${price}/kg.`, "success");
-  };
-
-  const submitBuyerCounter = (quoteId: string, price: number, msg?: string) => {
-    setQuotes((prev) =>
-      prev.map((q) =>
-        q.id === quoteId
-          ? {
-              ...q,
-              price,
-              status: "Counter-offer",
-              counterBy: "Buyer",
-              message: msg || "Revised buyer counter offer.",
-            }
-          : q
-      )
-    );
-
-    // Find quote to get Lot ID
-    const quote = quotes.find((q) => q.id === quoteId);
-    if (quote) {
-      setLots((prev) =>
-        prev.map((l) => (l.id === quote.lotId ? { ...l, status: "Counter-offer" } : l))
-      );
-    }
-
-    showToast(`Counter offer submitted: ₹${price}/kg`, "success");
-  };
-
-  const respondToQuote = (quoteId: string, action: "accept" | "reject" | "counter", counterPrice?: number) => {
-    const quote = quotes.find((q) => q.id === quoteId);
-    if (!quote) return;
-
-    if (action === "accept") {
-      // 1. Update quote status
-      setQuotes((prev) =>
-        prev.map((q) => (q.id === quoteId ? { ...q, status: "Accepted" } : q))
-      );
-
-      // 2. Generate contract
-      const contractId = `CNT-00${Math.floor(92 + Math.random() * 8)}`;
-      const totalAmt = parseFloat(((quote.qty * 1000 * quote.price) / 100000).toFixed(2)); // in Lakhs
-      const newContract: Contract = {
-        id: contractId,
-        lotId: quote.lotId,
-        lotDescription: `${quote.lotDescription} (${quote.qty} MT)`,
-        buyerName: quote.buyerName,
-        fpoName: "Nashik Agro FPO",
-        qty: quote.qty,
-        price: quote.price,
-        amount: totalAmt,
-        status: "eSign pending",
-        fpoSigned: true, // Signed by FPO accepting it
-        buyerSigned: false,
-        escrowStatus: "Pending Deposit",
-      };
-
-      setContracts((prev) => [newContract, ...prev]);
-
-      // 3. Update lot status
-      setLots((prev) =>
-        prev.map((l) => (l.id === quote.lotId ? { ...l, status: "Matched" } : l))
-      );
-
-      // 4. Log system event
-      const newLog: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "System",
-        recipient: "Escrow & Buyer Vault",
-        message: `Contract ${contractId} generated. FPO eSign attached. Awaiting buyer Aadhaar eSign.`,
-        timestamp: "Just now",
-      };
-      setLogs((prev) => [newLog, ...prev]);
-
-      showToast(`Quote accepted. Contract ${contractId} generated!`, "success");
-    } else if (action === "reject") {
-      setQuotes((prev) =>
-        prev.map((q) => (q.id === quoteId ? { ...q, status: "Rejected" } : q))
-      );
-      showToast(`Quote ${quoteId} rejected.`, "warning");
-    } else if (action === "counter" && counterPrice) {
-      setQuotes((prev) =>
-        prev.map((q) =>
-          q.id === quoteId
-            ? {
-                ...q,
-                price: counterPrice,
-                status: "Counter-offer",
-                counterBy: "FPO",
-                message: "FPO Counter offer expectation.",
-              }
-            : q
-        )
-      );
-
-      setLots((prev) =>
-        prev.map((l) => (l.id === quote.lotId ? { ...l, status: "Counter-offer" } : l))
-      );
-
-      const newLog: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "WhatsApp",
-        recipient: `Buyer (${quote.buyerName})`,
-        message: `FPO countered quote ${quoteId} at ₹${counterPrice}/kg. SMS alert dispatched.`,
-        timestamp: "Just now",
-      };
-      setLogs((prev) => [newLog, ...prev]);
-
-      showToast(`Counter offer of ₹${counterPrice}/kg sent to buyer.`, "info");
+      showToast("Lot uploaded and AI matching initialized successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
     }
   };
 
-  const signContract = (contractId: string, method: "esign" | "dsc") => {
+  const submitBuyerQuote = async (lotId: string, price: number, qty: number, msg?: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/quotes", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          lot_id: lotId,
+          price,
+          qty,
+          message: msg || "Initial buyer bid"
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to submit quote.");
+      }
+
+      showToast("Quote submitted successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const submitBuyerCounter = async (quoteId: string, price: number, msg?: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/quotes/${quoteId}/counter`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          price,
+          message: msg || "Buyer revised counter offer"
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to submit counter quote.");
+      }
+
+      showToast(`Counter offer submitted: ₹${price}/kg`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const respondToQuote = async (quoteId: string, action: "accept" | "reject" | "counter", counterPrice?: number) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/quotes/${quoteId}/respond`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action,
+          counter_price: counterPrice
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to respond to quote.");
+      }
+
+      if (action === "accept") {
+        const data = await res.json();
+        showToast(`Quote accepted. Contract ${data.contractId} generated!`, "success");
+      } else if (action === "reject") {
+        showToast(`Quote ${quoteId} rejected.`, "warning");
+      } else if (action === "counter") {
+        showToast(`Counter offer of ₹${counterPrice}/kg sent to buyer.`, "info");
+      }
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const signContract = async (contractId: string, method: "esign" | "dsc") => {
     if (method === "dsc") {
       showToast("DSC module launched", "info");
       return;
     }
 
-    let lotIdOfContract = "";
-    let contractAmt = 0;
-    let contractBuyer = "";
-    let contractFpo = "";
+    try {
+      const token = localStorage.getItem("token");
+      const signRes = await fetch(`http://localhost:8000/contracts/${contractId}/sign`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ method })
+      });
 
-    setContracts((prev) =>
-      prev.map((c) => {
-        if (c.id === contractId) {
-          lotIdOfContract = c.lotId;
-          contractAmt = c.amount * 100000; // in Rupees
-          contractBuyer = c.buyerName;
-          contractFpo = c.fpoName;
-          return {
-            ...c,
-            buyerSigned: true,
-            status: "Signed",
-            escrowStatus: "Deposited", // Automatically mock escrow deposit for the demo logic
-          };
-        }
-        return c;
-      })
-    );
+      if (!signRes.ok) {
+        const errorData = await signRes.json();
+        throw new Error(errorData.detail || "Failed to sign contract.");
+      }
 
-    // Update lot status to Dispatched
-    if (lotIdOfContract) {
-      setLots((prev) =>
-        prev.map((l) => (l.id === lotIdOfContract ? { ...l, status: "Dispatched" } : l))
-      );
+      const fundRes = await fetch(`http://localhost:8000/contracts/${contractId}/fund-escrow`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
 
-      // Create Ledger entry for Escrow deposit
-      const ledgerId = `TXN-${Math.floor(9022 + Math.random() * 100)}`;
-      const newLedger: LedgerEntry = {
-        id: ledgerId,
-        contractId,
-        type: "Credit",
-        party: contractBuyer,
-        amount: contractAmt,
-        timestamp: "Just now",
-      };
-      setLedger((prev) => [newLedger, ...prev]);
+      if (!fundRes.ok) {
+        const errorData = await fundRes.json();
+        throw new Error(errorData.detail || "Failed to fund escrow.");
+      }
 
-      // Generate Farmer splits for FPO payout
-      const newSplits: FarmerSplit[] = [
-        { lotId: lotIdOfContract, farmerName: "Ramesh Patil", sharePercent: 28, amount: contractAmt * 0.28, status: "Pending" },
-        { lotId: lotIdOfContract, farmerName: "Suresh Jadhav", sharePercent: 22, amount: contractAmt * 0.22, status: "Pending" },
-        { lotId: lotIdOfContract, farmerName: "Priya Kulkarni", sharePercent: 17, amount: contractAmt * 0.17, status: "Pending" },
-        { lotId: lotIdOfContract, farmerName: "Ganesh More", sharePercent: 33, amount: contractAmt * 0.33, status: "Pending" },
-      ];
-      setSplits((prev) => [...prev.filter(s => s.lotId !== lotIdOfContract), ...newSplits]);
-
-      // System Log
-      const newLog: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "System",
-        recipient: "Escrow Ledger",
-        message: `Funds of ₹${(contractAmt/100000).toFixed(2)}L deposited into escrow under ${contractId}. Shipment transit initialized.`,
-        timestamp: "Just now",
-      };
-      setLogs((prev) => [newLog, ...prev]);
+      showToast(`Contract ${contractId} signed and escrow funded successfully!`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
     }
-
-    showToast(`Contract ${contractId} signed successfully!`, "success");
   };
 
-  const releaseFunds = (contractId: string) => {
-    let lotId = "";
-    let contractAmt = 0;
-    let buyer = "";
-    let fpo = "";
+  const releaseFunds = async (contractId: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/contracts/${contractId}/release-funds`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
 
-    setContracts((prev) =>
-      prev.map((c) => {
-        if (c.id === contractId) {
-          lotId = c.lotId;
-          contractAmt = c.amount * 100000;
-          buyer = c.buyerName;
-          fpo = c.fpoName;
-          return {
-            ...c,
-            escrowStatus: "Released",
-          };
-        }
-        return c;
-      })
-    );
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to release funds.");
+      }
 
-    // Update splits to Paid
-    if (lotId) {
-      setSplits((prev) =>
-        prev.map((s) => (s.lotId === lotId ? { ...s, status: "Paid" } : s))
-      );
-
-      // Update Lot to delivered / GRN Issued
-      setLots((prev) =>
-        prev.map((l) => (l.id === lotId ? { ...l, status: "Delivered" } : l))
-      );
-
-      // Create Ledger Debit entry for releasing to FPO
-      const ledgerId = `TXN-${Math.floor(9050 + Math.random() * 100)}`;
-      const newLedger: LedgerEntry = {
-        id: ledgerId,
-        contractId,
-        type: "Debit",
-        party: fpo,
-        amount: contractAmt,
-        timestamp: "Just now",
-      };
-      setLedger((prev) => [newLedger, ...prev]);
-
-      // Log it
-      const newLog: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "System",
-        recipient: "Bank Gateway",
-        message: `Escrow funds of ₹${(contractAmt/100000).toFixed(2)}L disbursed. Splits released to farmers.`,
-        timestamp: "Just now",
-      };
-      setLogs((prev) => [newLog, ...prev]);
+      showToast("Funds released to FPO and farmers successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
     }
-
-    showToast(`Funds released to FPO and farmers!`, "success");
   };
 
-  const resolveDispute = (disputeId: string) => {
-    updateDisputeStatus(disputeId, "Resolved");
-  };
+  const resolveDispute = async (disputeId: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/disputes/${disputeId}/resolve`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
 
-  const fileDispute = (type: Dispute["type"], lotId: string, description: string) => {
-    const id = `DSP-${Math.floor(100 + Math.random() * 900)}`;
-    const newDispute: Dispute = {
-      id,
-      type,
-      lotId,
-      buyerName: currentRole === "buyer" ? "R.K. Traders Pvt. Ltd" : "Spice Exports Ltd",
-      fpoName: "Nashik Agro FPO",
-      description,
-      status: "Review",
-      filedAt: new Date().toISOString().split("T")[0],
-    };
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to resolve dispute.");
+      }
 
-    setDisputes((prev) => [newDispute, ...prev]);
-
-    // Send notifications
-    const sysLog: SystemLog = {
-      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-      channel: "System",
-      recipient: "MahaFPC Regulator",
-      message: `New Dispute ${id} (${type}) filed for Lot ${lotId} by ${currentRole === "buyer" ? "Buyer" : "FPO"}.`,
-      timestamp: "Just now",
-    };
-
-    const waLog: SystemLog = {
-      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-      channel: "WhatsApp",
-      recipient: "+91 99000 12345 (Regulator)",
-      message: `Alert: Dispute ${id} filed. Reason: ${description}.`,
-      timestamp: "Just now",
-    };
-
-    const emailLog: SystemLog = {
-      id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-      channel: "Email",
-      recipient: "compliance@mahafpc.in",
-      message: `MahaFPC Arbitration Case opened: ${id} for Lot ${lotId}. Status set to Review.`,
-      timestamp: "Just now",
-    };
-
-    setLogs((prev) => [sysLog, waLog, emailLog, ...prev]);
-    showToast(`Dispute ${id} filed successfully with MahaFPC.`, "success");
-  };
-
-  const updateDisputeStatus = (disputeId: string, status: Dispute["status"]) => {
-    setDisputes((prev) =>
-      prev.map((d) => (d.id === disputeId ? { ...d, status } : d))
-    );
-
-    const dispute = disputes.find((d) => d.id === disputeId);
-    if (dispute) {
-      const sysLog: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "System",
-        recipient: "Trade Parties",
-        message: `Dispute ${disputeId} status updated to ${status} by Regulator.`,
-        timestamp: "Just now",
-      };
-
-      const waLog: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "WhatsApp",
-        recipient: "+91 99000 12345",
-        message: `MahaFPC Dispute Update: Dispute ${disputeId} is now ${status}.`,
-        timestamp: "Just now",
-      };
-
-      const emailLog: SystemLog = {
-        id: `LOG-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-        channel: "Email",
-        recipient: "admin@mahafpc.in",
-        message: `Arbitration Notice: Case ${disputeId} status changed to ${status}. Details logged.`,
-        timestamp: "Just now",
-      };
-
-      setLogs((prev) => [sysLog, waLog, emailLog, ...prev]);
+      showToast(`Dispute ${disputeId} status updated to Resolved.`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
     }
-
-    showToast(`Dispute ${disputeId} status updated to ${status}.`, "success");
   };
 
-  const createRole = (name: string, description: string) => {
-    // TODO: POST /api/roles
-    const newId = roles.length > 0 ? Math.max(...roles.map((r) => r.id)) + 1 : 1;
-    const today = new Date();
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const createdStr = `${months[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
-    
-    const newRole: SystemRole = {
-      id: newId,
-      name,
-      description,
-      is_superadmin: false,
-      usersAssigned: 0,
-      created: createdStr,
-    };
-    
-    setRoles((prev) => [...prev, newRole]);
+  const fileDispute = async (type: Dispute["type"], lotId: string, description: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/disputes", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          lot_id: lotId,
+          type,
+          description
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to file dispute.");
+      }
+
+      const data = await res.json();
+      showToast(`Dispute ${data.id} filed successfully with MahaFPC.`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
   };
 
-  const updateRole = (id: number, name: string, description: string) => {
-    // TODO: POST /api/roles
-    setRoles((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, name, description } : r))
-    );
+  const updateDisputeStatus = async (disputeId: string, status: Dispute["status"]) => {
+    if (status === "Resolved") {
+      await resolveDispute(disputeId);
+    } else {
+      showToast(`Dispute status update to ${status} requires Regulator dashboard.`, "info");
+    }
   };
 
-  const deleteRole = (id: number) => {
-    // TODO: POST /api/roles
-    setRoles((prev) => prev.filter((r) => r.id !== id));
-    // Clean up permissions
-    setPermissions((prev) => {
-      const copy = { ...prev };
-      delete copy[id];
-      return copy;
-    });
+  const createRole = async (name: string, description: string, email?: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/roles", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name, description, email })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to create role.");
+      }
+
+      showToast("System role created successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
   };
 
-  const savePermissions = (roleId: number, perms: RolePermissions) => {
-    // TODO: POST /api/roles
-    setPermissions((prev) => ({
-      ...prev,
-      [roleId]: perms,
-    }));
+  const updateRole = async (id: number, name: string, description: string, email?: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/roles/${id}`, {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name, description, email })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to update role.");
+      }
+
+      showToast("Role updated successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
   };
 
-  const assignUserRole = (roleId: number | null) => {
-    // TODO: POST /api/roles
-    setCurrentUserRoleId(roleId);
+  const deleteRole = async (id: number) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/roles/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to delete role.");
+      }
+
+      showToast("Role deleted successfully.", "info");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const savePermissions = async (roleId: number, perms: RolePermissions) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/roles/${roleId}/permissions`, {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ permissions: perms })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to save permissions.");
+      }
+
+      showToast("Permissions updated successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const assignUserRole = async (roleId: number | null) => {
+    if (!currentUserId) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/roles/users/${currentUserId}/assign-role`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ roleId })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to assign system role.");
+      }
+
+      setCurrentUserRoleId(roleId);
+      showToast("System role assigned successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
   };
 
   return (

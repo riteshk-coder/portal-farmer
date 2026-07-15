@@ -59,11 +59,11 @@ export default function AuthLandingPage() {
       >
         {/* Brand header */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl btn-gradient shadow-lg mb-4">
-            <IconLeaf className="w-7 h-7 text-white" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl overflow-hidden shadow-lg mb-4">
+            <img src="/logo.jpg" alt="Buyer Portal Logo" className="w-full h-full object-cover" />
           </div>
           <p className="text-xs font-semibold tracking-widest text-tx-s uppercase">
-            Digital Buyer Access Portal
+            Buyer Portal
           </p>
           <h1 className="text-3xl font-bold text-tx-p mt-2 tracking-tight">
             Select Your Role to Continue

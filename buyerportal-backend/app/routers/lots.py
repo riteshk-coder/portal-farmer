@@ -3,11 +3,12 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
-from app.models.user import User, RoleType
-from app.models.lot import Lot, LotStatus
+from app.models.user import User, RoleType, Buyer
+from app.models.lot import Lot, LotStatus, LotMatch
 from app.schemas.lots import LotResponse
 from app.services.ai_matching import run_ai_matching
 from app.services.notification_service import log_notification, NotificationChannel
+from app.core.config import settings
 import random
 
 router = APIRouter(prefix="/lots", tags=["lots"])
@@ -108,16 +109,40 @@ def upload_lot(
     db.commit()
 
     # Trigger matches immediately
-    run_ai_matching(new_lot, db)
+    db.query(LotMatch).filter(LotMatch.lot_id == new_lot.id).delete()
+    matches = run_ai_matching(new_lot, db)
+    
+    # Rank matches and select top N
+    matches.sort(key=lambda m: m.match_score, reverse=True)
+    top_matches = matches[:settings.TOP_MATCHES]
+    
+    db.add_all(top_matches)
+    db.commit()
     db.refresh(new_lot)
 
     # Log matching notification
-    log_notification(
-        db,
-        NotificationChannel.system,
-        "AI Matching Core",
-        f"New AI Buyer Match found for {description} ({lot_id}). R.K. Traders Pvt. Ltd matched with 91% confidence score."
-    )
+    if top_matches:
+        new_lot.status = LotStatus.matched
+        db.commit()
+        
+        top_m = top_matches[0]
+        # Resolve buyer name
+        buyer_name = "Buyer"
+        if top_m.buyer:
+            buyer_name = top_m.buyer.name
+        else:
+            # Fallback query if relation not loaded
+            buyer_rec = db.query(Buyer).filter(Buyer.id == top_m.buyer_id).first()
+            if buyer_rec:
+                buyer_name = buyer_rec.name
+
+        log_notification(
+            db,
+            NotificationChannel.system,
+            "AI Matching Core",
+            f"Matching Complete ({top_m.matching_path} path) for {description} ({lot_id}). "
+            f"Top match: {buyer_name} with {top_m.match_score}% confidence score."
+        )
 
     return lot_to_dict(new_lot)
 

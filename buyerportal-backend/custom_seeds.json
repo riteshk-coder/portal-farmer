@@ -1,0 +1,43 @@
+{
+  "users": [],
+  "buyers": [],
+  "fpos": [
+    {
+      "id": 5,
+      "name": "Ritesh Vijay Khatkar",
+      "location": "Kolhapur District, Maharashtra",
+      "members_count": 0,
+      "grade_conformance": "90%",
+      "rating": "4.0 / 5.0",
+      "fpo_registration_number": "",
+      "state": "Maharashtra",
+      "district": "pune",
+      "village": "Kolhapur District",
+      "bank_account_num": null,
+      "bank_ifsc": null
+    },
+    {
+      "id": 6,
+      "name": "Ritesh Khatakar",
+      "location": "nadal, Maharashtra",
+      "members_count": 0,
+      "grade_conformance": "90%",
+      "rating": "4.0 / 5.0",
+      "fpo_registration_number": "",
+      "state": "Maharashtra",
+      "district": "nadal",
+      "village": "nadal",
+      "bank_account_num": null,
+      "bank_ifsc": null
+    }
+  ],
+  "consultants": [],
+  "admin_invites": [
+    {
+      "id": 99,
+      "email": "riteshk@ova.ngo",
+      "employee_id": "EMP-0925",
+      "invited_at": "2026-07-15T05:59:51.708274"
+    }
+  ]
+}

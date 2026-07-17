@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.security import verify_password, create_access_token
+from app.core.security import verify_password, create_access_token, hash_password
 from app.core.deps import get_current_user
-from app.models.user import User, Fpo, Buyer, Consultant, AdminInvite, RoleType
+from app.core.config import settings, DEV_SEED
+from twilio.rest import Client
+from app.services.notification_service import log_notification
+from app.models.notification import NotificationChannel
+import hashlib
+import secrets
+
+from app.models.user import User, Fpo, Buyer, Consultant, AdminInvite, RoleType, ContactInquiry
 from app.schemas.auth import (
     LoginResponse,
     UserRegisterRequest,
@@ -13,7 +20,10 @@ from app.schemas.auth import (
     OtpVerifyRequest,
     AdminInviteRequest,
     AddMemberRequest,
-    CompanyMemberResponse
+    CompanyMemberResponse,
+    CompleteRegistrationRequest,
+    ContactInquiryCreate,
+    ContactInquiryResponse
 )
 from datetime import datetime, timedelta
 
@@ -40,7 +50,20 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         )
 
     user = db.query(User).filter(User.email == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password_hash):
+    if not user:
+        record_failed_attempt = FAILED_ATTEMPTS.get(username, [])
+        record_failed_attempt.append(now)
+        FAILED_ATTEMPTS[username] = record_failed_attempt
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+
+    # Check if the user is a pending/rejected member
+    if hasattr(user, "member_status") and user.member_status and user.member_status != "Active":
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is pending approval from your organization." if user.member_status == "Pending" else "Your registration was not approved."
+        )
+
+    if not verify_password(form_data.password, user.password_hash):
         record_failed_attempt = FAILED_ATTEMPTS.get(username, [])
         record_failed_attempt.append(now)
         FAILED_ATTEMPTS[username] = record_failed_attempt
@@ -212,32 +235,102 @@ def login_google(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
         "position": user.employee_role
     }
 
-# In-memory storage for OTP
-OTP_DB = {}
+def normalize_to_e164(mobile: str) -> str:
+    cleaned = "".join(c for c in mobile if c.isdigit() or c == "+")
+    if not cleaned.startswith("+"):
+        if len(cleaned) == 10:
+            cleaned = "+91" + cleaned
+        elif len(cleaned) == 12 and cleaned.startswith("91"):
+            cleaned = "+" + cleaned
+        elif len(cleaned) == 11 and cleaned.startswith("0"):
+            cleaned = "+91" + cleaned[1:]
+    return cleaned
+
+def compute_dev_otp(mobile: str) -> str:
+    h = hashlib.sha256(f"{mobile}:{DEV_SEED}".encode("utf-8")).hexdigest()
+    val = int(h[:8], 16) % 1000000
+    return f"{val:06d}"
 
 @router.post("/otp/send")
-def otp_send(payload: OtpSendRequest):
+def otp_send(payload: OtpSendRequest, response: Response):
     mobile = payload.mobile_number.strip()
-    import random
-    code = str(random.randint(100000, 999999))
-    OTP_DB[mobile] = code
-    print(f"[OTP SEND] Code for {mobile} is {code}")
-    return {"message": "OTP sent successfully.", "otp": code}
+    
+    if settings.OTP_DEV_MODE:
+        code = compute_dev_otp(mobile)
+        print("\n" + "="*80)
+        print(" [WARNING] RUNNING IN INSECURE OTP DEVELOPER MODE. DO NOT USE IN PRODUCTION.")
+        print(f" [DEV MODE] Dynamic OTP Code generated for {mobile}: {code}")
+        print("="*80 + "\n")
+        response.headers["X-OTP-Dev-Mode"] = "true"
+        return {"message": "OTP sent successfully."}
+        
+    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN or not settings.TWILIO_VERIFY_SERVICE_SID:
+        raise HTTPException(
+            status_code=500,
+            detail="SMS service provider credentials not configured. Please define Twilio SIDs in env."
+        )
+        
+    try:
+        twilio_to = normalize_to_e164(mobile)
+        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+        verification = client.verify.v2.services(settings.TWILIO_VERIFY_SERVICE_SID) \
+            .verifications \
+            .create(to=twilio_to, channel="sms")
+        return {"message": "OTP sent successfully."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to send OTP via Twilio Verify: {str(e)}"
+        )
 
 @router.post("/otp/verify")
-def otp_verify(payload: OtpVerifyRequest, db: Session = Depends(get_db)):
+def otp_verify(payload: OtpVerifyRequest, response: Response, db: Session = Depends(get_db)):
     mobile = payload.mobile_number.strip()
     otp = payload.otp.strip()
     purpose = payload.purpose
     
-    expected = OTP_DB.get(mobile)
-    if otp != expected and otp != "123456":
-        raise HTTPException(status_code=400, detail="Invalid OTP code.")
-        
+    if settings.OTP_DEV_MODE:
+        response.headers["X-OTP-Dev-Mode"] = "true"
+        expected = compute_dev_otp(mobile)
+        if otp != expected:
+            raise HTTPException(status_code=400, detail="Invalid OTP code.")
+    else:
+        if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN or not settings.TWILIO_VERIFY_SERVICE_SID:
+            raise HTTPException(
+                status_code=500,
+                detail="SMS service provider credentials not configured. Please define Twilio SIDs in env."
+            )
+        try:
+            twilio_to = normalize_to_e164(mobile)
+            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            verification_check = client.verify.v2.services(settings.TWILIO_VERIFY_SERVICE_SID) \
+                .verification_checks \
+                .create(to=twilio_to, code=otp)
+            
+            if verification_check.status != "approved":
+                raise HTTPException(status_code=400, detail="Invalid or expired OTP code.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Twilio verification failed: {str(e)}"
+            )
+            
     if purpose == "login":
-        user = db.query(User).filter(User.mobile == mobile).first()
+        last_10 = mobile[-10:] if len(mobile) >= 10 else mobile
+        user = db.query(User).filter(
+            (User.mobile == mobile) | (User.mobile.like(f"%{last_10}"))
+        ).first()
         if not user:
             raise HTTPException(status_code=404, detail="No account found with this mobile number.")
+            
+        # Check if the user is a pending/rejected member
+        if hasattr(user, "member_status") and user.member_status and user.member_status != "Active":
+            raise HTTPException(
+                status_code=403,
+                detail="Your account is pending approval from your organization." if user.member_status == "Pending" else "Your registration was not approved."
+            )
             
         access_token = create_access_token(data={"sub": str(user.id)})
         return {
@@ -304,7 +397,8 @@ def get_members(current_user: User = Depends(get_current_user), db: Session = De
             id=m.id,
             name=m.name,
             email=m.email,
-            role=m.employee_role or "Employee"
+            role=m.employee_role or "Employee",
+            status=m.member_status or "Active"
         ) for m in members
     ]
 
@@ -319,6 +413,8 @@ def add_member(payload: AddMemberRequest, current_user: User = Depends(get_curre
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered in system.")
         
+    invite_token = secrets.token_urlsafe(32)
+    
     new_member = User(
         name=payload.name.strip(),
         email=email,
@@ -326,11 +422,29 @@ def add_member(payload: AddMemberRequest, current_user: User = Depends(get_curre
         fpo_id=current_user.fpo_id,
         buyer_id=current_user.buyer_id,
         employee_role=payload.role.strip(),
-        system_role_id=2
+        system_role_id=2,
+        member_status="Pending",
+        password_hash=None,
+        invited_by=current_user.id,
+        invite_token=invite_token
     )
     db.add(new_member)
+    db.flush()
+    
+    # Send / log notification audit trail
+    invite_url = f"http://localhost:3000/register/complete?token={invite_token}"
+    log_notification(
+        db, 
+        NotificationChannel.email, 
+        email, 
+        f"Welcome! You have been added as a member by {current_user.name}. "
+        f"Please complete your registration setting your password at: {invite_url}"
+    )
+    
+    print(f"\n[INVITE SENT] Email: {email} | Registration Link: {invite_url}\n")
+    
     db.commit()
-    return {"message": "Member added successfully."}
+    return {"message": "Invitation sent — they'll be able to log in once they register and you approve them."}
 
 @router.delete("/members/{member_id}")
 def delete_member(member_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -398,3 +512,76 @@ def get_directory(db: Session = Depends(get_db), current_user: User = Depends(ge
             for b in buyers
         ]
     }
+
+@router.post("/members/complete-registration")
+def complete_registration(payload: CompleteRegistrationRequest, db: Session = Depends(get_db)):
+    token = payload.token.strip()
+    password = payload.password.strip()
+    
+    user = db.query(User).filter(User.invite_token == token, User.member_status == "Pending").first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired registration token.")
+        
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+        
+    user.password_hash = hash_password(password)
+    db.commit()
+    return {"message": "Password registered successfully. Please wait for approval from your organization administrator."}
+
+@router.post("/members/{member_id}/approve")
+def approve_member(member_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    member = db.query(User).filter(User.id == member_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found.")
+        
+    if current_user.fpo_id and member.fpo_id != current_user.fpo_id:
+        raise HTTPException(status_code=403, detail="Not authorized to approve this member.")
+    elif current_user.buyer_id and member.buyer_id != current_user.buyer_id:
+        raise HTTPException(status_code=403, detail="Not authorized to approve this member.")
+    elif not current_user.fpo_id and not current_user.buyer_id:
+        raise HTTPException(status_code=403, detail="Not authorized.")
+        
+    if not member.password_hash:
+        raise HTTPException(status_code=400, detail="Member has not completed registration/password setup yet.")
+        
+    member.member_status = "Active"
+    db.commit()
+    return {"message": "Member approved successfully."}
+
+@router.post("/members/{member_id}/reject")
+def reject_member(member_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    member = db.query(User).filter(User.id == member_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found.")
+        
+    if current_user.fpo_id and member.fpo_id != current_user.fpo_id:
+        raise HTTPException(status_code=403, detail="Not authorized to reject this member.")
+    elif current_user.buyer_id and member.buyer_id != current_user.buyer_id:
+        raise HTTPException(status_code=403, detail="Not authorized to reject this member.")
+    elif not current_user.fpo_id and not current_user.buyer_id:
+        raise HTTPException(status_code=403, detail="Not authorized.")
+        
+    member.member_status = "Rejected"
+    db.commit()
+    return {"message": "Member registration rejected."}
+
+@router.post("/contact-inquiries")
+def create_contact_inquiry(payload: ContactInquiryCreate, db: Session = Depends(get_db)):
+    inquiry = ContactInquiry(
+        name=payload.name.strip(),
+        email=payload.email.strip().lower(),
+        company=payload.company.strip() if payload.company else None,
+        phone=payload.phone.strip() if payload.phone else None,
+        created_at=datetime.utcnow().isoformat()
+    )
+    db.add(inquiry)
+    db.commit()
+    return {"message": "Inquiry recorded successfully."}
+
+@router.get("/contact-inquiries", response_model=list[ContactInquiryResponse])
+def get_contact_inquiries(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role_type not in [RoleType.mahafpc, RoleType.admin]:
+        raise HTTPException(status_code=403, detail="Not authorized to view contact inquiries.")
+    inquiries = db.query(ContactInquiry).order_by(ContactInquiry.id.desc()).all()
+    return inquiries

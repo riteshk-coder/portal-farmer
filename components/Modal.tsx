@@ -7,6 +7,27 @@ import { IconX, IconLock, IconShieldCheck, IconChevronDown, IconPackage, IconPho
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 
+const getInitials = (name: string, email: string): string => {
+  const str = (name || email || "M").trim();
+  const words = str.split(/\s+/);
+  if (words.length >= 2) {
+    return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+  }
+  return str.substring(0, 2).toUpperCase();
+};
+
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case "Active":
+      return <span className="text-[9px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-950 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Active</span>;
+    case "Rejected":
+      return <span className="text-[9px] bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-950 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Rejected</span>;
+    case "Pending":
+    default:
+      return <span className="text-[9px] bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-950 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Pending</span>;
+  }
+};
+
 export const Modal: React.FC = () => {
   const {
     modal,
@@ -50,7 +71,7 @@ export const Modal: React.FC = () => {
   const [profileBankIfsc, setProfileBankIfsc] = useState("HDFC0000123");
   const [profileEmployeeId, setProfileEmployeeId] = useState("EMP-7849");
   
-  const [profileMembers, setProfileMembers] = useState<{id?: number, name: string, email: string, role: string}[]>([]);
+  const [profileMembers, setProfileMembers] = useState<{id?: number, name: string, email: string, role: string, status: string}[]>([]);
   const [newMemberName, setNewMemberName] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("Employee");
@@ -344,13 +365,21 @@ export const Modal: React.FC = () => {
           <div>
             <h2 className="card-title">Aadhaar e-Sign Verification</h2>
             <p className="text-xs text-tx-s mt-1">Platform Contract Vault · {contract.id}</p>
+            <div className="text-[9px] inline-block text-teal-accent bg-teal-bg/60 border border-teal-m/10 px-2 py-0.5 rounded font-bold uppercase mt-1">
+              Simulated Aadhaar eSign (DSC integration planned)
+            </div>
           </div>
         </div>
 
         <div className="text-sm leading-relaxed text-tx-s space-y-1.5">
           <div><strong className="text-tx-p">FPO:</strong> {contract.fpoName}</div>
           <div><strong className="text-tx-p">Lot:</strong> {contract.lotDescription}</div>
-          <div><strong className="text-tx-p">Escrow Amount:</strong> ₹{contract.amount.toFixed(2)}L (₹{contract.price}/kg)</div>
+          <div>
+            <strong className="text-tx-p">Escrow Amount:</strong> ₹{contract.amount.toFixed(2)}L (₹{contract.price}/kg)
+            <div className="text-[9px] inline-block text-amb bg-amb-bg/60 border border-amb-m/10 px-2 py-0.5 rounded font-bold uppercase ml-2 align-middle">
+              Simulated Payment (Razorpay Route planned)
+            </div>
+          </div>
         </div>
 
         {!otpSent ? (
@@ -464,6 +493,60 @@ export const Modal: React.FC = () => {
         }
         
         showToast("Member removed successfully.", "info");
+        // Reload list
+        const reloadRes = await fetch("http://localhost:8000/auth/members", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (reloadRes.ok) {
+          const reloadData = await reloadRes.json();
+          setProfileMembers(reloadData);
+        }
+      } catch (err: any) {
+        showToast(err.message, "error");
+      }
+    };
+
+    const handleApproveMember = async (memberId: number) => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`http://localhost:8000/auth/members/${memberId}/approve`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Failed to approve member.");
+        }
+        
+        showToast("Member approved successfully.", "success");
+        // Reload list
+        const reloadRes = await fetch("http://localhost:8000/auth/members", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (reloadRes.ok) {
+          const reloadData = await reloadRes.json();
+          setProfileMembers(reloadData);
+        }
+      } catch (err: any) {
+        showToast(err.message, "error");
+      }
+    };
+
+    const handleRejectMember = async (memberId: number) => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`http://localhost:8000/auth/members/${memberId}/reject`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Failed to reject member.");
+        }
+        
+        showToast("Member registration rejected.", "warning");
         // Reload list
         const reloadRes = await fetch("http://localhost:8000/auth/members", {
           headers: { "Authorization": `Bearer ${token}` }
@@ -679,30 +762,53 @@ export const Modal: React.FC = () => {
                     {profileMembers.map((m, idx) => (
                       <div
                         key={idx}
-                        className="bg-bg-s border border-bd-t rounded-xl p-4 flex items-center justify-between shadow-sm hover:shadow-md hover:border-bd-s transition-all"
+                        className="bg-bg-s border border-bd-t rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm hover:shadow-md hover:border-bd-s transition-all"
                       >
                         <div className="flex items-center gap-3 overflow-hidden">
-                          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
-                            {m.name ? m.name.charAt(0).toUpperCase() : m.email.charAt(0).toUpperCase()}
+                          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 shadow-inner">
+                            {getInitials(m.name, m.email)}
                           </div>
                           <div className="overflow-hidden">
-                            <div className="text-sm font-semibold text-tx-p truncate flex items-center gap-2">
+                            <div className="text-sm font-semibold text-tx-p truncate flex items-center gap-2 flex-wrap">
                               <span>{m.name}</span>
                               <span className="text-[9px] bg-bg-t text-primary border border-bd-t px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
                                 {m.role}
                               </span>
+                              {getStatusBadge(m.status)}
                             </div>
                             <div className="text-xs text-tx-s font-medium mt-0.5 truncate">{m.email}</div>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMember(m.id!)}
-                          className="p-2 rounded-lg text-tx-t hover:text-danger hover:bg-danger/10 transition-all shrink-0"
-                          title="Remove Authorization"
-                        >
-                          <IconTrash className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                          {m.status === "Pending" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveMember(m.id!)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded shadow-sm transition-all"
+                                title="Approve Registration"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRejectMember(m.id!)}
+                                className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded shadow-sm transition-all"
+                                title="Reject Registration"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(m.id!)}
+                            className="p-2 rounded-lg text-tx-t hover:text-danger hover:bg-danger/10 transition-all shrink-0"
+                            title="Remove Authorization"
+                          >
+                            <IconTrash className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -713,8 +819,11 @@ export const Modal: React.FC = () => {
             {/* Add member form */}
             <div className="border-t border-bd-t pt-5 space-y-4">
               <h4 className="text-sm font-bold text-tx-p uppercase tracking-wider">
-                Authorize New Google Account / Member
+                Invite & Authorize New Member
               </h4>
+              <p className="text-[11px] text-tx-s font-semibold leading-relaxed max-w-xl">
+                * Note: Adding a member generates a secure registration link logged in the notifications registry. The member must set their password and receive your final approval before logging in.
+              </p>
               <div className="space-y-4 bg-bg-s/40 border border-bd-t rounded-xl p-4 md:p-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input

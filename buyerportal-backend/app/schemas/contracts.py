@@ -1,9 +1,12 @@
 from typing import Optional
+from datetime import datetime
 from pydantic import Field, field_serializer
 from app.schemas.base import BaseSchema
 
+
 class ContractSignRequest(BaseSchema):
     method: str  # esign | dsc
+
 
 class ContractResponse(BaseSchema):
     id: str
@@ -22,6 +25,11 @@ class ContractResponse(BaseSchema):
     gps_tracking_id: Optional[str] = Field(None, serialization_alias="gpsTrackingId")
     gst_invoice: Optional[str] = Field(None, serialization_alias="gstInvoice")
     grn_number: Optional[str] = Field(None, serialization_alias="grnNumber")
+    is_archived: bool = Field(False, serialization_alias="isArchived")
+    dispatched_at: Optional[datetime] = Field(None, serialization_alias="dispatchedAt")
+    grn_overdue: bool = Field(False, serialization_alias="grnOverdue")
+    # Signature token is returned only from the /sign endpoint (not stored on model)
+    signature_token: Optional[str] = Field(None, serialization_alias="signatureToken")
 
     @field_serializer("price", "qty")
     def serialize_numeric(self, val: float) -> float:
@@ -32,6 +40,6 @@ class ContractResponse(BaseSchema):
         # Convert total ₹ value from DB to Lakhs (₹ / 100,000) for the frontend response
         return float(amount) / 100000.0
 
+
 # Backward-compatible aliases
 SignRequest = ContractSignRequest
-

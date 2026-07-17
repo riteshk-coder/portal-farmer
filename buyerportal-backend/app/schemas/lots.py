@@ -21,6 +21,7 @@ class LotCreateRequest(BaseSchema):
     price_expectation: float = Field(..., description="Expected price in ₹ per kg")
     location: str
     harvest_date: Optional[datetime] = Field(None, description="Harvest date")
+    available_date: Optional[datetime] = Field(None, description="Available date")
     notes: Optional[str] = Field(None, description="Additional notes")
     lab_report_url: Optional[str] = Field(None, description="Lab test report URL")
 
@@ -35,6 +36,7 @@ class LotResponse(BaseSchema):
     price_expectation: float = Field(..., serialization_alias="priceExpectation")
     location: str
     harvest_date: Optional[datetime] = Field(None, serialization_alias="harvestDate")
+    available_date: Optional[datetime] = Field(None, serialization_alias="availableDate")
     notes: Optional[str] = None
     lab_report_url: Optional[str] = Field(None, serialization_alias="labReportUrl")
     fpo_name: str = Field(..., serialization_alias="fpoName")
@@ -55,6 +57,10 @@ class LotResponse(BaseSchema):
 
     @field_serializer("harvest_date")
     def serialize_harvest_date(self, dt: Optional[datetime]) -> Optional[str]:
+        return dt.date().isoformat() if dt is not None else None
+
+    @field_serializer("available_date")
+    def serialize_available_date(self, dt: Optional[datetime]) -> Optional[str]:
         return dt.date().isoformat() if dt is not None else None
 
     @field_serializer("created_at")

@@ -181,7 +181,7 @@ export default function LoginPage() {
         throw new Error(data.detail || "Failed to send OTP.");
       }
 
-      showToast(`Demo OTP sent successfully! Code: ${data.otp}`, "success");
+      showToast("OTP sent successfully. Please check your SMS inbox.", "success");
       router.push(`/verify-otp?mobile=${mobileInput.trim()}&role=${role}&purpose=login`);
     } catch (err: any) {
       showToast(err.message, "error");

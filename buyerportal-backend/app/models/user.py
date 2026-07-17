@@ -27,6 +27,9 @@ class User(Base):
     employee_id = Column(String, nullable=True)
     employee_role = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
+    member_status = Column(String, default="Pending", nullable=True)
+    invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    invite_token = Column(String, nullable=True)
 
 class Fpo(Base):
     __tablename__ = "fpos"
@@ -77,3 +80,12 @@ class AdminInvite(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     employee_id = Column(String, nullable=False)
     invited_at = Column(String, nullable=False)
+
+class ContactInquiry(Base):
+    __tablename__ = "contact_inquiries"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    company = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    created_at = Column(String, nullable=False)

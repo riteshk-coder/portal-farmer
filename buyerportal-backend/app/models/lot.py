@@ -24,6 +24,8 @@ class Lot(Base):
     location = Column(String)
     curcumin_percent = Column(Float, nullable=True)
     harvest_date = Column(String, nullable=True)
+    available_date = Column(String, nullable=True)
+    variety = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     fpo_id = Column(Integer, ForeignKey("fpos.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

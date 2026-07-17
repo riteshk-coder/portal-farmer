@@ -210,12 +210,12 @@ def seed_db():
 
     print("Seeding users...")
     users = [
-        User(id=1, name="Regulator Admin", email="admin@mahafpc.in", password_hash=hash_password("admin@123"), role_type=RoleType.mahafpc, system_role_id=1),
-        User(id=2, name="Nashik Admin", email="fpo@buyerportal.in", password_hash=hash_password("fpo@123"), role_type=RoleType.fpo, fpo_id=1, system_role_id=2),
-        User(id=3, name="RK Purchase Manager", email="buyer@buyerportal.in", password_hash=hash_password("buyer@123"), role_type=RoleType.buyer, buyer_id=1, system_role_id=2),
-        User(id=4, name="Escrow Manager", email="escrow@buyerportal.in", password_hash=hash_password("escrow@123"), role_type=RoleType.escrow, system_role_id=2),
-        User(id=5, name="AI Matching Daemon", email="portal@buyerportal.in", password_hash=hash_password("portal@123"), role_type=RoleType.portal, system_role_id=3),
-        User(id=6, name="Ritesh Khatakar", email="riteshk@ova.ngo", password_hash=hash_password("admin@123"), role_type=RoleType.mahafpc, system_role_id=1),
+        User(id=1, name="Regulator Admin", email="admin@mahafpc.in", password_hash=hash_password("admin@123"), role_type=RoleType.mahafpc, system_role_id=1, member_status="Active"),
+        User(id=2, name="Nashik Admin", email="fpo@buyerportal.in", password_hash=hash_password("fpo@123"), role_type=RoleType.fpo, fpo_id=1, system_role_id=2, member_status="Active"),
+        User(id=3, name="RK Purchase Manager", email="buyer@buyerportal.in", password_hash=hash_password("buyer@123"), role_type=RoleType.buyer, buyer_id=1, system_role_id=2, member_status="Active"),
+        User(id=4, name="Escrow Manager", email="escrow@buyerportal.in", password_hash=hash_password("escrow@123"), role_type=RoleType.escrow, system_role_id=2, member_status="Active"),
+        User(id=5, name="AI Matching Daemon", email="portal@buyerportal.in", password_hash=hash_password("portal@123"), role_type=RoleType.portal, system_role_id=3, member_status="Active"),
+        User(id=6, name="Ritesh Khatakar", email="riteshk@ova.ngo", password_hash=hash_password("admin@123"), role_type=RoleType.mahafpc, system_role_id=1, member_status="Active"),
     ]
     db.add_all(users)
     db.commit()

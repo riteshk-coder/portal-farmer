@@ -92,7 +92,7 @@ export default function VerifyOtpPage() {
       if (!response.ok) {
         throw new Error(data.detail || "Failed to resend OTP.");
       }
-      showToast(`Resent successfully! Code: ${data.otp}`, "success");
+      showToast("Resent successfully! Please check your SMS inbox.", "success");
     } catch (err: any) {
       showToast(err.message, "error");
     }

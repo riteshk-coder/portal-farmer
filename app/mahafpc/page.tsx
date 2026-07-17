@@ -26,6 +26,7 @@ import {
   IconTrash,
   IconX,
   IconChevronLeft,
+  IconSearch,
 } from "@tabler/icons-react";
 
 export default function MahaFpcDashboard() {
@@ -52,6 +53,9 @@ export default function MahaFpcDashboard() {
   const [dirBuyers, setDirBuyers] = useState<any[]>([]);
   const [selectedDirTab, setSelectedDirTab] = useState<"users" | "fpos" | "buyers">("users");
 
+  const [contactInquiries, setContactInquiries] = useState<any[]>([]);
+  const [searchInquiry, setSearchInquiry] = useState("");
+
   useEffect(() => {
     const fetchDirectory = async () => {
       try {
@@ -70,6 +74,26 @@ export default function MahaFpcDashboard() {
       }
     };
     fetchDirectory();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "Contact Inquiries") {
+      const fetchInquiries = async () => {
+        try {
+          const token = localStorage.getItem("token");
+          const res = await fetch("http://localhost:8000/auth/contact-inquiries", {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setContactInquiries(data);
+          }
+        } catch (err) {
+          console.error("Failed to fetch contact inquiries:", err);
+        }
+      };
+      fetchInquiries();
+    }
   }, [activeTab]);
 
   // Mock static scoring tables
@@ -1081,6 +1105,89 @@ export default function MahaFpcDashboard() {
     );
   };
 
+  const renderContactInquiries = () => {
+    const filtered = contactInquiries.filter((inq: any) =>
+      inq.name.toLowerCase().includes(searchInquiry.toLowerCase()) ||
+      inq.email.toLowerCase().includes(searchInquiry.toLowerCase()) ||
+      (inq.company && inq.company.toLowerCase().includes(searchInquiry.toLowerCase())) ||
+      (inq.phone && inq.phone.includes(searchInquiry))
+    );
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold text-tx-p">Contact Inquiries</h2>
+          <p className="text-xs md:text-sm text-tx-s mt-1">
+            Review and track interest submissions and custom inquiries logged from the landing page.
+          </p>
+        </div>
+
+        {/* Filters/Actions toolbar */}
+        <div className="bg-[#FFFFFF] dark:bg-[#1E293B] border border-bd-t rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+          <div className="relative w-full sm:max-w-xs">
+            <span className="absolute inset-y-0 left-3 flex items-center text-tx-t pointer-events-none">
+              <IconSearch className="w-4 h-4" />
+            </span>
+            <input
+              type="text"
+              placeholder="Search inquiries..."
+              value={searchInquiry}
+              onChange={(e) => setSearchInquiry(e.target.value)}
+              className="w-full bg-[#F8FAFC] dark:bg-[#0F172A] border border-bd-t rounded-lg pl-9 pr-3.5 py-1.5 font-semibold text-xs text-tx-p focus:outline-none focus:border-primary placeholder:text-tx-t"
+            />
+          </div>
+          <div className="text-xs font-semibold text-tx-s">
+            Showing <strong className="text-tx-p">{filtered.length}</strong> of {contactInquiries.length} submissions
+          </div>
+        </div>
+
+        {/* Data Table */}
+        <div className="bg-[#FFFFFF] dark:bg-[#1E293B] border border-bd-t rounded-xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs font-semibold">
+              <thead>
+                <tr className="bg-[#F1F5F9] dark:bg-[#0F172A] text-tx-s border-b border-bd-t uppercase tracking-wider text-[10px]">
+                  <th className="py-3.5 px-4 font-bold">Contact Name</th>
+                  <th className="py-3.5 px-4 font-bold">Work Email</th>
+                  <th className="py-3.5 px-4 font-bold">Organization</th>
+                  <th className="py-3.5 px-4 font-bold">Phone Number</th>
+                  <th className="py-3.5 px-4 font-bold">Submission Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-bd-t text-tx-p">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-12 text-center text-tx-t font-semibold">
+                      No contact inquiries found.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((inq: any) => (
+                    <tr key={inq.id} className="hover:bg-bg-s/30 transition-colors">
+                      <td className="py-3 px-4 font-bold text-tx-p">{inq.name}</td>
+                      <td className="py-3 px-4 text-tx-s font-medium">{inq.email}</td>
+                      <td className="py-3 px-4 text-tx-p">{inq.company || <span className="text-tx-t italic">N/A</span>}</td>
+                      <td className="py-3 px-4 font-mono text-tx-p">{inq.phone || <span className="text-tx-t italic">N/A</span>}</td>
+                      <td className="py-3 px-4 text-tx-s font-medium">
+                        {new Date(inq.created_at).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <DashboardShell>
       {activeTab === "Overview" && renderOverview()}
@@ -1092,6 +1199,7 @@ export default function MahaFpcDashboard() {
       {activeTab === "Archive" && renderArchive()}
       {activeTab === "Roles & Permissions" && renderRolesAndPermissions()}
       {activeTab === "Member Directory" && renderMemberDirectory()}
+      {activeTab === "Contact Inquiries" && renderContactInquiries()}
     </DashboardShell>
   );
 }

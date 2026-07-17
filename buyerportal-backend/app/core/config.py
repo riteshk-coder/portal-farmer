@@ -1,9 +1,15 @@
 from pydantic_settings import BaseSettings
+import secrets
 
 class Settings(BaseSettings):
     DATABASE_URL: str
     ANTHROPIC_API_KEY: str
     JWT_SECRET: str
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_VERIFY_SERVICE_SID: str = ""
+    OTP_DEV_MODE: bool = False
+    APP_ENV: str = "development"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
     FRONTEND_URL: str = "http://localhost:3000"
@@ -26,3 +32,4 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+DEV_SEED = secrets.token_hex(16)

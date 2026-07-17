@@ -8,6 +8,10 @@ class ContractStatus(str, enum.Enum):
     draft = "Draft"
     esign_pending = "eSign pending"
     signed = "Signed"
+    dispatched = "Dispatched"
+    delivered = "Delivered"
+    grn_issued = "GRN Issued"
+    disputed = "Disputed"
 
 class EscrowStatus(str, enum.Enum):
     pending_deposit = "Pending Deposit"
@@ -31,6 +35,8 @@ class Contract(Base):
     gps_tracking_id = Column(String, nullable=True)
     gst_invoice = Column(String, nullable=True)
     grn_number = Column(String, nullable=True)
+    dispatched_at = Column(DateTime(timezone=True), nullable=True)
+    is_archived = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)

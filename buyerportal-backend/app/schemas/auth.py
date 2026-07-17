@@ -51,3 +51,25 @@ class CompanyMemberResponse(BaseModel):
     name: str
     email: str
     role: str
+    status: str
+
+class CompleteRegistrationRequest(BaseModel):
+    token: str
+    password: str
+
+class ContactInquiryCreate(BaseModel):
+    name: str
+    email: str
+    company: Optional[str] = None
+    phone: Optional[str] = None
+
+class ContactInquiryResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    company: Optional[str]
+    phone: Optional[str]
+    created_at: str
+
+    class Config:
+        from_attributes = True

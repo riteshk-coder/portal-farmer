@@ -5,6 +5,16 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 from app.core.config import settings
+
+# Startup Security Gate
+if settings.OTP_DEV_MODE and settings.APP_ENV != "development":
+    import sys
+    print("\n" + "!"*80)
+    print(" FATAL SECURITY ERROR: OTP_DEV_MODE is enabled but APP_ENV is not 'development'.")
+    print(" Refusing to boot for security reasons. Please disable OTP_DEV_MODE in production.")
+    print("!"*80 + "\n")
+    sys.exit(1)
+
 from app.routers import (
     auth_router,
     lots_router,

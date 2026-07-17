@@ -17,6 +17,7 @@ def lot_to_dict(lot: Lot) -> dict:
     return {
         "id": lot.id,
         "description": lot.description,
+        "variety": lot.variety,
         "qty": lot.qty,
         "grade": lot.grade,
         "status": lot.status.value if hasattr(lot.status, "value") else lot.status,
@@ -24,6 +25,7 @@ def lot_to_dict(lot: Lot) -> dict:
         "location": lot.location,
         "curcuminPercent": lot.curcumin_percent,
         "harvestDate": lot.harvest_date,
+        "availableDate": lot.available_date,
         "notes": lot.notes,
         "fpoName": lot.fpo.name if lot.fpo else "FPO",
         "createdAt": lot.created_at.strftime("%Y-%m-%dT%H:%M:%SZ") if lot.created_at else "",
@@ -67,9 +69,11 @@ def upload_lot(
     qty: float = Form(...),
     grade: str = Form(...),
     priceExpectation: float = Form(...),
+    variety: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
     curcuminPercent: Optional[float] = Form(None),
     harvestDate: Optional[str] = Form(None),
+    availableDate: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     labReport: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -95,12 +99,14 @@ def upload_lot(
     new_lot = Lot(
         id=lot_id,
         description=description,
+        variety=variety,
         qty=qty,
         grade=grade,
         price_expectation=priceExpectation,
         location=location or "Nashik, MH",
         curcumin_percent=curcuminPercent,
         harvest_date=harvestDate,
+        available_date=availableDate,
         notes=notes,
         status=LotStatus.matched, # Transition immediately to Matched to show compatibility
         fpo_id=current_user.fpo_id
@@ -125,24 +131,22 @@ def upload_lot(
         new_lot.status = LotStatus.matched
         db.commit()
         
-        top_m = top_matches[0]
-        # Resolve buyer name
-        buyer_name = "Buyer"
-        if top_m.buyer:
-            buyer_name = top_m.buyer.name
-        else:
-            # Fallback query if relation not loaded
-            buyer_rec = db.query(Buyer).filter(Buyer.id == top_m.buyer_id).first()
-            if buyer_rec:
-                buyer_name = buyer_rec.name
-
-        log_notification(
-            db,
-            NotificationChannel.system,
-            "AI Matching Core",
-            f"Matching Complete ({top_m.matching_path} path) for {description} ({lot_id}). "
-            f"Top match: {buyer_name} with {top_m.match_score}% confidence score."
-        )
+        for m in top_matches:
+            buyer_rec = m.buyer or db.query(Buyer).filter(Buyer.id == m.buyer_id).first()
+            buyer_name = buyer_rec.name if buyer_rec else f"Buyer {m.buyer_id}"
+            # Buyer model stores email on the linked User record, not on Buyer directly.
+            # log_notification uses the name as recipient label; use buyer_name for all channels.
+            
+            msg = (
+                f"New turmeric lot matched! Lot ID: {lot_id} ({description}). "
+                f"Match confidence score: {m.match_score}%. "
+                f"You have 48 hours to submit your initial quote."
+            )
+            
+            # Log three channels per infographic: WhatsApp, SMS, and Email
+            log_notification(db, NotificationChannel.whatsapp, buyer_name, msg)
+            log_notification(db, NotificationChannel.sms, buyer_name, msg)
+            log_notification(db, NotificationChannel.email, buyer_name, msg)
 
     return lot_to_dict(new_lot)
 

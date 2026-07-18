@@ -11,7 +11,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { ChartPlaceholder } from "@/components/ui/ChartPlaceholder";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Input, Textarea } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 import { AnimatePresence, motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import {
   IconStar,
   IconExchange,
@@ -30,6 +32,7 @@ import {
 } from "@tabler/icons-react";
 
 export default function MahaFpcDashboard() {
+  const router = useRouter();
   const {
     loginAsRole,
     activeTabs,
@@ -39,12 +42,21 @@ export default function MahaFpcDashboard() {
     disputes,
     resolveDispute,
     updateDisputeStatus,
+    openModal,
   } = useApp();
 
-  // Ensure role is synchronized
+  // Ensure role is synchronized and protected
   useEffect(() => {
-    loginAsRole("mahafpc");
-  }, [loginAsRole]);
+    const token = localStorage.getItem("token");
+    const savedRole = localStorage.getItem("user_role");
+    if (!token || !savedRole) {
+      router.push("/auth");
+    } else if (savedRole !== "mahafpc" && savedRole !== "admin") {
+      router.push(`/${savedRole}`);
+    } else {
+      loginAsRole("mahafpc");
+    }
+  }, [loginAsRole, router]);
 
   const activeTab = activeTabs.mahafpc || "Overview";
 
@@ -467,17 +479,9 @@ export default function MahaFpcDashboard() {
         header: "Action",
         render: (item: any) => {
           return (
-            <select
-              value={item.status}
-              onChange={(e) => updateDisputeStatus(item.id, e.target.value as any)}
-              className="bg-bg-p border border-bd-s rounded px-2 py-1 text-[11px] font-bold text-tx-p focus:outline-none focus:border-pur"
-            >
-              <option value="Review">Review</option>
-              <option value="Pending">Pending</option>
-              <option value="In progress">In progress</option>
-              <option value="Resolved">Resolved</option>
-              <option value="Not resolved">Not resolved</option>
-            </select>
+            <Button size="sm" onClick={() => openModal("dispute-details", { dispute: item })}>
+              View Thread
+            </Button>
           );
         },
       },

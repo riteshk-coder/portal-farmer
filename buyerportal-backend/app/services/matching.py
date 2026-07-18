@@ -5,6 +5,43 @@ from app.models.user import Buyer
 
 logger = logging.getLogger(__name__)
 
+def filter_buyers_by_preferences(lot: Lot, db: Session) -> list[Buyer]:
+    from app.models.user import BuyerProductPreference
+    buyers = db.query(Buyer).all()
+    filtered_buyers = []
+    
+    for buyer in buyers:
+        prefs = db.query(BuyerProductPreference).filter(BuyerProductPreference.buyer_id == buyer.id).all()
+        if not prefs:
+            filtered_buyers.append(buyer)
+            continue
+            
+        has_match = False
+        if lot.product_type_id is not None:
+            for p in prefs:
+                if p.product_type_id == lot.product_type_id:
+                    has_match = True
+                    break
+                if p.category_id is not None and p.category_id == lot.category_id:
+                    has_match = True
+                    break
+        elif lot.custom_product_name:
+            for p in prefs:
+                if p.category_id is not None and p.category_id == lot.category_id:
+                    has_match = True
+                    break
+                if p.product_type_id is not None:
+                    from app.models.product_type import ProductType
+                    pt = db.query(ProductType).filter(ProductType.id == p.product_type_id).first()
+                    if pt and pt.category_id == lot.category_id:
+                        has_match = True
+                        break
+                        
+        if has_match:
+            filtered_buyers.append(buyer)
+            
+    return filtered_buyers
+
 # Centralized configurable weights for the rule-based matcher formula
 CONFIG_WEIGHTS = {
     "commodity_weight": 0.4,

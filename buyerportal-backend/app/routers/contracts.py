@@ -163,7 +163,58 @@ def sign_contract(
                 f"Method: {body.method}. "
                 f"Both parties signed: {c.buyer_signed and c.fpo_signed}."
             ),
+            recipient_role="portal",
+            event_type="contract_signed_vault"
         )
+
+        buyer_name = c.buyer.name if c.buyer else "Buyer"
+        fpo_name = c.fpo.name if c.fpo else "FPO"
+        
+        if c.buyer_signed and c.fpo_signed:
+            # FPO Notification #10 (System)
+            log_notification(
+                db,
+                NotificationChannel.system,
+                fpo_name,
+                f"{buyer_name} signed Contract {c.id}. Both parties signed — escrow deposit now pending.",
+                recipient_role="fpo",
+                event_type="buyer_signed_contract"
+            )
+            
+            # Buyer Notification #8 (System)
+            log_notification(
+                db,
+                NotificationChannel.system,
+                buyer_name,
+                f"You signed Contract {c.id}. Both parties signed — proceed to escrow deposit.",
+                recipient_role="buyer",
+                event_type="contract_signed_successfully"
+            )
+            
+            # Buyer Notification #9 (Email, System)
+            escrow_req_msg = f"Escrow payment required for {c.id}: ₹{c.amount}L. Deposit within 48h to avoid a reliability score penalty."
+            log_notification(db, NotificationChannel.email, buyer_name, escrow_req_msg, recipient_role="buyer", event_type="escrow_payment_required")
+            log_notification(db, NotificationChannel.system, buyer_name, escrow_req_msg, recipient_role="buyer", event_type="escrow_payment_required")
+            
+            # Escrow Service Notification — contract fully signed, awaiting escrow deposit
+            log_notification(
+                db,
+                NotificationChannel.system,
+                "Escrow Service",
+                f"Contract {c.id} fully signed by Buyer '{buyer_name}' and FPO '{fpo_name}'. Amount: ₹{c.amount}L. Awaiting buyer escrow deposit.",
+                recipient_role="escrow",
+                event_type="contract_signed_escrow_pending"
+            )
+        else:
+            # Just log confirmation for the single signature
+            log_notification(
+                db,
+                NotificationChannel.system,
+                current_user.name,
+                f"You signed Contract {c.id}. Waiting for other party to sign.",
+                recipient_role="buyer" if current_user.role_type == RoleType.buyer else "fpo",
+                event_type="contract_signed_half"
+            )
 
     except HTTPException:
         db.rollback()
@@ -174,6 +225,7 @@ def sign_contract(
 
     result = contract_to_dict(c)
     result["signatureToken"] = signature_token
+    result["simulated"] = True
     return result
 
 
@@ -185,7 +237,7 @@ def sign_contract(
 def fund_escrow(
     contract_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role("buyer")),
 ):
     """
     Step 07 — Buyer funds 100% of contract value into escrow within 48 hours
@@ -227,12 +279,26 @@ def fund_escrow(
         c.updated_at = datetime.utcnow()
         db.commit()
 
+        buyer_name = c.buyer.name if c.buyer else "Buyer"
+        fpo_name = c.fpo.name if c.fpo else "FPO"
+
+        # FPO Notification #11 (System)
+        log_notification(db, NotificationChannel.system, fpo_name, f"Escrow funded for {c.id} — ₹{c.amount}L secured. You may now dispatch goods.", recipient_role="fpo", event_type="escrow_deposited_fpo")
+        
+        # Buyer Notification #10 (System)
+        log_notification(db, NotificationChannel.system, buyer_name, f"Your payment of ₹{c.amount}L for {c.id} is now held securely in escrow.", recipient_role="buyer", event_type="escrow_payment_successful")
+        
+        # Admin Notification #8 (System)
+        log_notification(db, NotificationChannel.system, "MahaFPC", f"Escrow deposit confirmed on {c.id} — ₹{c.amount}L. Ledger balanced.", recipient_role="mahafpc", event_type="escrow_deposited_admin")
+        
+        # Escrow Service Notification — funds received and secured
         log_notification(
             db,
             NotificationChannel.system,
-            "Escrow Daemon",
-            f"Simulated escrow deposit confirmed for contract {contract_id}. "
-            f"Amount: ₹{c.amount:.2f}L. Awaiting FPO dispatch.",
+            "Escrow Service",
+            f"Funds secured: ₹{c.amount}L deposited for Contract {c.id} by Buyer '{buyer_name}'. FPO '{fpo_name}' notified to dispatch.",
+            recipient_role="escrow",
+            event_type="escrow_funds_secured"
         )
 
     except HTTPException:
@@ -240,9 +306,19 @@ def fund_escrow(
         raise
     except Exception as e:
         db.rollback()
+        # Admin Notification #9 (System)
+        buyer_name = "Buyer"
+        try:
+            buyer_name = c.buyer.name if c.buyer else "Buyer"
+        except:
+            pass
+        log_notification(db, NotificationChannel.system, "MahaFPC", f"Payment failed on {contract_id} — escrow deposit rejected/reversed. Buyer: {buyer_name}. Needs follow-up.", recipient_role="mahafpc", event_type="payment_failed")
         raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}")
 
-    return contract_to_dict(c)
+
+    res = contract_to_dict(c)
+    res["simulated"] = True
+    return res
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -301,31 +377,33 @@ def dispatch_goods(
         c.updated_at = datetime.utcnow()
         db.commit()
 
-        # Notify buyer of dispatch with tracking details
         buyer_name = c.buyer.name if c.buyer else f"Buyer {c.buyer_id}"
-        log_notification(
-            db,
-            NotificationChannel.email,
-            buyer_name,
-            (
-                f"Your order for contract {contract_id} has been dispatched. "
-                f"e-Way Bill: {c.eway_bill} | GPS Tracking: {c.gps_tracking_id} | "
-                f"GST Invoice: {c.gst_invoice}. "
-                f"Please issue a GRN within 24 hours of delivery."
-            ),
-        )
-        log_notification(
-            db,
-            NotificationChannel.whatsapp,
-            buyer_name,
-            f"📦 Shipment dispatched for contract {contract_id}. Track: {c.gps_tracking_id}. Issue GRN within 24 h.",
-        )
-        log_notification(
-            db,
-            NotificationChannel.sms,
-            buyer_name,
-            f"BuyerPortal: Goods dispatched [{contract_id}]. GPS: {c.gps_tracking_id}. Issue GRN within 24h.",
-        )
+        fpo_name = c.fpo.name if c.fpo else "FPO"
+        
+        # FPO Notification #12 (System)
+        log_notification(db, NotificationChannel.system, fpo_name, f"Dispatch confirmed for {c.id}. e-Way Bill {c.eway_bill}, {c.gps_tracking_id}. Buyer notified.", recipient_role="fpo", event_type="goods_dispatched_fpo")
+        
+        # Buyer Notification #11 (Email, WhatsApp, SMS + System panel)
+        buyer_disp_msg = f"Shipment dispatched for {c.id}. e-Way Bill: {c.eway_bill}, GPS Tracking: {c.gps_tracking_id}. Issue GRN within 24h."
+        log_notification(db, NotificationChannel.email, buyer_name, buyer_disp_msg, recipient_role="buyer", event_type="goods_dispatched_buyer")
+        log_notification(db, NotificationChannel.whatsapp, buyer_name, buyer_disp_msg, recipient_role="buyer", event_type="goods_dispatched_buyer")
+        log_notification(db, NotificationChannel.sms, buyer_name, buyer_disp_msg, recipient_role="buyer", event_type="goods_dispatched_buyer")
+        log_notification(db, NotificationChannel.system, buyer_name, buyer_disp_msg, recipient_role="buyer", event_type="goods_dispatched_buyer")
+        
+        # Buyer Notification #12 (WhatsApp + System)
+        tracking_msg = f"📦 Live tracking now available for {c.id}: {c.gps_tracking_id}."
+        log_notification(db, NotificationChannel.whatsapp, buyer_name, tracking_msg, recipient_role="buyer", event_type="tracking_available")
+        log_notification(db, NotificationChannel.system, buyer_name, tracking_msg, recipient_role="buyer", event_type="tracking_available")
+        
+        # Buyer Notification #13 (SMS + System)
+        delivery_msg = f"Reminder: Shipment for {c.id} is expected to arrive within 6 hours."
+        log_notification(db, NotificationChannel.sms, buyer_name, delivery_msg, recipient_role="buyer", event_type="delivery_reminder")
+        log_notification(db, NotificationChannel.system, buyer_name, delivery_msg, recipient_role="buyer", event_type="delivery_reminder")
+        
+        # Buyer Notification #14 (Email + System)
+        grn_due_msg = f"Reminder: GRN for {c.id} is due within 6 hours to avoid a compliance flag."
+        log_notification(db, NotificationChannel.email, buyer_name, grn_due_msg, recipient_role="buyer", event_type="grn_due_reminder")
+        log_notification(db, NotificationChannel.system, buyer_name, grn_due_msg, recipient_role="buyer", event_type="grn_due_reminder")
 
     except HTTPException:
         db.rollback()
@@ -334,7 +412,9 @@ def dispatch_goods(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Dispatch transaction failed: {str(e)}")
 
-    return contract_to_dict(c)
+    res = contract_to_dict(c)
+    res["simulated"] = True
+    return res
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -420,6 +500,15 @@ def issue_grn(
             ),
         )
 
+        buyer_name = c.buyer.name if c.buyer else "Buyer"
+        fpo_name = c.fpo.name if c.fpo else "FPO"
+        
+        # FPO Notification #13 (System)
+        log_notification(db, NotificationChannel.system, fpo_name, f"Buyer issued GRN {c.grn_number} for {c.id}. 48-hour quality acceptance window has started.", recipient_role="fpo", event_type="grn_received_fpo")
+        
+        # Buyer confirmation (System)
+        log_notification(db, NotificationChannel.system, buyer_name, f"You successfully issued GRN {c.grn_number} for contract {c.id}.", recipient_role="buyer", event_type="grn_issued_buyer")
+
     except HTTPException:
         db.rollback()
         raise
@@ -487,7 +576,7 @@ def release_funds(
             db.query(Dispute)
             .filter(
                 Dispute.lot_id == c.lot_id,
-                Dispute.status.in_([DisputeStatus.review, DisputeStatus.pending]),
+                Dispute.status.in_([DisputeStatus.open, DisputeStatus.in_review, DisputeStatus.review, DisputeStatus.pending]),
             )
             .first()
         )
@@ -586,13 +675,35 @@ def release_funds(
         raise HTTPException(status_code=500, detail=f"Escrow release transaction failed: {str(e)}")
 
     # Completion notification (after commit)
+    buyer_name = c.buyer.name if c.buyer else "Buyer"
+    fpo_name = c.fpo.name if c.fpo else "FPO"
+    
+    payout_70 = round(c.amount * 0.7, 2)
+    payout_30 = round(c.amount * 0.3, 2)
+    
+    # FPO Notification #14 (System)
+    log_notification(db, NotificationChannel.system, fpo_name, f"Funds released for {c.id}: ₹{payout_70:.1f}L (70%) credited immediately, ₹{payout_30:.1f}L (30%) held. Farmer splits computed.", recipient_role="fpo", event_type="payment_released_fpo")
+    
+    # Buyer Notification #15 (System)
+    log_notification(db, NotificationChannel.system, buyer_name, f"Payment of ₹{c.amount}L for {c.id} has been completed and released to the FPO.", recipient_role="buyer", event_type="payment_completed_buyer")
+    
+    # FPO Notification #15 (System)
+    if c.fpo:
+        log_notification(db, NotificationChannel.system, fpo_name, f"Your FPO supply rating increased to {c.fpo.reliability_score}/100 (+2) — successful delivery on {c.id}.", recipient_role="fpo", event_type="reliability_score_updated")
+
+    # Escrow Service Notification — funds disbursed successfully
     log_notification(
         db,
         NotificationChannel.system,
-        "Escrow Daemon",
-        f"Funds released for contract {contract_id}. "
-        f"70% immediate to FPO logged; 30% hold logged. "
-        f"Farmer splits marked Paid. Transaction archived.",
+        "Escrow Service",
+        (
+            f"Disbursement complete for Contract {c.id}: "
+            f"₹{payout_70:.1f}L (70%) released immediately to FPO '{fpo_name}', "
+            f"₹{payout_30:.1f}L (30%) scheduled post no-objection window. "
+            f"Transaction archived."
+        ),
+        recipient_role="escrow",
+        event_type="escrow_funds_disbursed"
     )
 
     return contract_to_dict(c)

@@ -127,17 +127,18 @@ export default function BuyerPortalIntroPage() {
           {/* Right Column Agricultural Supply Chain Image */}
           <div className="md:col-span-5 flex items-center justify-center relative w-full">
             {/* Soft background glow behind image */}
-            <div className="absolute inset-0 bg-emerald-500/10 rounded-3xl filter blur-3xl z-0 pointer-events-none" />
+            <div className="absolute inset-0 bg-emerald-500/15 rounded-3xl filter blur-3xl z-0 pointer-events-none" />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.6 }}
-              className="relative z-10 w-full rounded-2xl overflow-hidden border border-emerald-950/40 shadow-2xl bg-emerald-950/20"
+              initial={{ opacity: 0, scale: 0.92, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.7, ease: "easeOut" }}
+              className="relative z-10 w-full rounded-2xl overflow-hidden border border-emerald-500/20 shadow-[0_0_60px_rgba(16,185,129,0.15)] bg-transparent"
             >
               <img
-                src="/supply_chain.jpg"
-                alt="Agricultural Supply Chain Scene"
-                className="w-full h-auto object-cover aspect-[4/3] sm:aspect-[16/10] md:aspect-[4/3]"
+                src="/hero_agri.jpg"
+                alt="Agri-tech supply chain with drone, truck, mobile app and turmeric products"
+                className="w-full h-auto object-cover aspect-[4/3]"
+                style={{ mixBlendMode: "normal" }}
               />
             </motion.div>
           </div>

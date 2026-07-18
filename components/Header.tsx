@@ -19,7 +19,32 @@ import {
   IconUser,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { useApp } from "@/context/AppContext";
+import { useApp, SystemLog } from "@/context/AppContext";
+
+const formatRelativeTime = (timestampStr: string) => {
+  if (!timestampStr) return "";
+  try {
+    const dateObj = new Date(timestampStr);
+    if (isNaN(dateObj.getTime())) {
+      return timestampStr;
+    }
+    const now = new Date();
+    const diffMs = now.getTime() - dateObj.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays} days ago`;
+    
+    return dateObj.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  } catch (e) {
+    return timestampStr;
+  }
+};
 
 type RoleType = "fpo" | "buyer" | "mahafpc" | "portal" | "escrow";
 
@@ -51,36 +76,45 @@ export const Header: React.FC<HeaderProps> = ({
   onMenuToggle,
   sidebarOpen,
 }) => {
-  const { openModal, logs, currentRole, setActiveTabForRole } = useApp();
+  const { openModal, logs, currentRole, setActiveTabForRole, markAllLogsAsRead } = useApp();
 
-  const handleNotificationClick = (message: string) => {
+  const handleNotificationClick = (l: SystemLog) => {
     setNotificationsOpen(false); // Close dropdown
-    const msg = message.toLowerCase();
+    const msg = l.message.toLowerCase();
+    const event = (l.eventType || "").toLowerCase();
 
     if (currentRole === "fpo") {
-      if (msg.includes("quote") || msg.includes("bid")) {
+      if (event.includes("quote") || msg.includes("quote") || msg.includes("bid")) {
         setActiveTabForRole("fpo", "Quotes");
-      } else if (msg.includes("contract") || msg.includes("esign")) {
+      } else if (event.includes("contract") || msg.includes("contract") || msg.includes("esign")) {
         setActiveTabForRole("fpo", "Contracts");
-      } else if (msg.includes("payout") || msg.includes("split") || msg.includes("paid")) {
+      } else if (event.includes("payment") || event.includes("payout") || event.includes("split") || event.includes("grn") || msg.includes("payout") || msg.includes("split") || msg.includes("paid") || msg.includes("grn") || msg.includes("fund")) {
         setActiveTabForRole("fpo", "Payouts");
+      } else if (event.includes("dispute") || msg.includes("complaint") || msg.includes("dsp-")) {
+        setActiveTabForRole("fpo", "Disputes");
       } else {
         setActiveTabForRole("fpo", "My lots");
       }
     } else if (currentRole === "buyer") {
-      if (msg.includes("quote") || msg.includes("bid") || msg.includes("counter")) {
+      if (event.includes("match") || msg.includes("match") || msg.includes("buying preference")) {
+        setActiveTabForRole("buyer", "Lot alerts");
+      } else if (event.includes("quote") || msg.includes("quote") || msg.includes("bid") || msg.includes("counter")) {
         setActiveTabForRole("buyer", "My quotes");
-      } else if (msg.includes("contract") || msg.includes("esign") || msg.includes("signing")) {
+      } else if (event.includes("contract") || msg.includes("contract") || msg.includes("esign") || msg.includes("signing")) {
         setActiveTabForRole("buyer", "Sign contracts");
-      } else if (msg.includes("escrow") || msg.includes("deposit")) {
+      } else if (event.includes("escrow") || msg.includes("escrow") || msg.includes("deposit")) {
         setActiveTabForRole("buyer", "Escrow");
-      } else if (msg.includes("grn") || msg.includes("arrived") || msg.includes("shipment")) {
+      } else if (event.includes("dispatch") || event.includes("tracking") || event.includes("delivery") || event.includes("grn") || msg.includes("grn") || msg.includes("arrived") || msg.includes("shipment") || msg.includes("dispatch")) {
         setActiveTabForRole("buyer", "Issue GRN");
+      } else if (event.includes("dispute") || msg.includes("complaint") || msg.includes("dsp-")) {
+        setActiveTabForRole("buyer", "Disputes");
       } else {
         setActiveTabForRole("buyer", "Lot alerts");
       }
     } else if (currentRole === "mahafpc") {
-      if (msg.includes("dispute") || msg.includes("resolution") || msg.includes("arbitration")) {
+      if (event.includes("user") || event.includes("fpo_registered") || event.includes("buyer_registered") || event.includes("verification") || msg.includes("registration") || msg.includes("register") || msg.includes("verification") || msg.includes("team member")) {
+        setActiveTabForRole("mahafpc", "Member Directory");
+      } else if (event.includes("dispute") || msg.includes("complaint") || msg.includes("dispute") || msg.includes("resolution") || msg.includes("arbitration") || msg.includes("dsp-")) {
         setActiveTabForRole("mahafpc", "Disputes");
       } else {
         setActiveTabForRole("mahafpc", "Overview");
@@ -88,9 +122,19 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const sortedLogs = React.useMemo(() => {
+    if (!logs) return [];
+    return [...logs].sort((a, b) => {
+      if (!a.isRead && b.isRead) return -1;
+      if (a.isRead && !b.isRead) return 1;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+  }, [logs]);
+
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [lastSeenCount, setLastSeenCount] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const profileRef = useRef<HTMLDivElement>(null);
@@ -100,6 +144,12 @@ export const Header: React.FC<HeaderProps> = ({
     const isDark = document.documentElement.classList.contains("dark");
     setDarkMode(isDark);
   }, []);
+
+  useEffect(() => {
+    if (notificationsOpen && logs && logs.some(l => !l.isRead)) {
+      markAllLogsAsRead();
+    }
+  }, [notificationsOpen, logs]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -175,56 +225,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right */}
       <div className="flex items-center gap-2">
-        {/* Quick Switch */}
-        <div className="relative hidden sm:block">
-          <button
-            onClick={() => setSwitcherOpen(!switcherOpen)}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-tx-s bg-bg-s border border-bd-t rounded-md hover:bg-bg-t hover:text-tx-p transition-all"
-            aria-expanded={switcherOpen}
-            aria-haspopup="listbox"
-          >
-            <span>Quick Switch</span>
-            <IconChevronDown className={cn("w-3.5 h-3.5 transition-transform", switcherOpen && "rotate-180")} />
-          </button>
 
-          <AnimatePresence>
-            {switcherOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setSwitcherOpen(false)} aria-hidden />
-                <motion.div
-                  initial={{ opacity: 0, y: -4, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2 w-52 bg-bg-p border border-bd-t rounded-lg shadow-lg py-1 z-50"
-                  role="listbox"
-                >
-                  <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-tx-t font-semibold border-b border-bd-t">
-                    Select Actor View
-                  </div>
-                  {roles.map((r) => (
-                    <button
-                      key={r.id}
-                      role="option"
-                      aria-selected={role === r.id}
-                      onClick={() => {
-                        onRoleSwitch(r.id);
-                        setSwitcherOpen(false);
-                      }}
-                      className={cn(
-                        "w-full text-left px-3 py-2.5 hover:bg-bg-s flex items-center gap-2.5 transition-colors text-sm",
-                        role === r.id ? "text-tx-p bg-bg-s font-semibold" : "text-tx-s"
-                      )}
-                    >
-                      {r.icon}
-                      <span>{r.label}</span>
-                    </button>
-                  ))}
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
-        </div>
 
         {/* Dark mode toggle */}
         <button
@@ -245,7 +246,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-haspopup="menu"
           >
             <IconBell className="w-5 h-5" />
-            {logs && logs.length > 0 && (
+            {logs && logs.some(l => !l.isRead) && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-full ring-2 ring-bg-p" aria-hidden />
             )}
           </button>
@@ -263,7 +264,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="px-4 py-3 border-b border-bd-t flex items-center justify-between">
                   <p className="text-sm font-semibold text-tx-p">System Logs & Notifications</p>
                   <span className="text-xs bg-bg-s text-tx-s px-2 py-0.5 rounded-full font-medium">
-                    {logs ? logs.length : 0} total
+                    {logs ? logs.filter(l => !l.isRead).length : 0} unread
                   </span>
                 </div>
                 {!logs || logs.length === 0 ? (
@@ -272,19 +273,30 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 ) : (
                   <div className="divide-y divide-bd-t">
-                    {logs.slice(0, 8).map((l, i) => (
+                    {sortedLogs.slice(0, 8).map((l, i) => (
                       <div
                         key={l.id || i}
-                        onClick={() => handleNotificationClick(l.message)}
-                        className="px-4 py-3 hover:bg-bg-s transition-colors text-xs cursor-pointer select-none"
+                        onClick={() => handleNotificationClick(l)}
+                        className={cn(
+                          "px-4 py-3 hover:bg-bg-s transition-colors text-xs cursor-pointer select-none relative",
+                          !l.isRead && "bg-teal-50/50 dark:bg-teal-950/20"
+                        )}
                       >
                         <div className="flex items-center justify-between gap-1 mb-1">
-                          <span className="font-bold text-tx-p uppercase tracking-wider text-[9px] bg-bg-t px-1.5 py-0.5 rounded">
-                            {l.channel}
-                          </span>
-                          <span className="text-tx-s">{l.timestamp}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-tx-p uppercase tracking-wider text-[9px] bg-bg-t px-1.5 py-0.5 rounded">
+                              {l.channel}
+                            </span>
+                            {!l.isRead && (
+                              <span className="w-1.5 h-1.5 bg-danger rounded-full" />
+                            )}
+                          </div>
+                          <span className="text-tx-s">{formatRelativeTime(l.timestamp)}</span>
                         </div>
-                        <p className="text-tx-s leading-relaxed font-medium mt-1 hover:text-primary transition-colors">{l.message}</p>
+                        <p className={cn(
+                          "text-tx-s leading-relaxed mt-1 hover:text-primary transition-colors",
+                          !l.isRead ? "font-semibold text-tx-p" : "font-medium text-tx-s"
+                        )}>{l.message}</p>
                       </div>
                     ))}
                   </div>

@@ -1,9 +1,11 @@
 import pytest
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from main import app
-from app.core.database import SessionLocal, Base, engine
+from app.core.database import Base, get_db
 from app.models.user import User, Fpo, Buyer, RoleType, Consultant, AdminInvite
 from app.models.lot import Lot, LotMatch, LotStatus
 from app.models.quote import Quote, QuoteStatus, CounterBy
@@ -14,12 +16,29 @@ from app.models.notification import SystemLog
 from app.models.role import SystemRole, RolePermission
 from app.models.farmer import Farmer
 from app.core.security import hash_password, create_access_token
+from app.core.config import settings
+
+# Setup isolated test database for test suite runs
+test_engine = create_engine("sqlite:///test_buyerportal.db", connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+engine = test_engine
+
+def override_get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+app.dependency_overrides[get_db] = override_get_db
 
 client = TestClient(app)
 
 @pytest.fixture(scope="module")
 def setup_db():
+    settings.OTP_DEV_MODE = True
     # Setup test database tables
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     
@@ -48,10 +67,38 @@ def setup_db():
     db.add_all([superadmin, manager])
     
     # Seed FPO & Buyer profiles with Integer IDs
-    fpo = Fpo(id=1, name="Nashik Agro FPO", location="Nashik, MH", members_count=150, grade_conformance="94%", rating="4.6 / 5.0", reliability_score=92)
-    buyer = Buyer(id=1, name="R.K. Traders Pvt. Ltd", location="Mumbai, MH", reliability_score=94)
-    db.add_all([fpo, buyer])
+    fpo = Fpo(id=1, name="Nashik Agro FPO", location="Nashik, MH", members_count=150, grade_conformance="94%", rating="4.6 / 5.0", reliability_score=92, onboarding_completed=True)
+    buyer1 = Buyer(id=1, name="R.K. Traders Pvt. Ltd", location="Mumbai, MH", reliability_score=94, onboarding_completed=True)
+    buyer2 = Buyer(id=2, name="Nurture Foods Ltd", location="Pune, MH", reliability_score=90, onboarding_completed=True)
+    buyer3 = Buyer(id=3, name="Spice Exports Ltd", location="Chennai, TN", reliability_score=85, onboarding_completed=True)
+    db.add_all([fpo, buyer1, buyer2, buyer3])
     db.commit()
+
+    # Seed Product Categories & Product Types for test run
+    from app.models.product_category import ProductCategory
+    from app.models.product_type import ProductType
+
+    TAXONOMY = {
+        "🌱 Raw Turmeric": ["Fresh Turmeric", "Turmeric Rhizomes", "Turmeric Fingers", "Turmeric Bulbs", "Seed Rhizomes"],
+        "🟡 Processed Turmeric": ["Turmeric Powder", "Organic Turmeric Powder", "Turmeric Flakes", "Turmeric Granules", "Turmeric Slices", "Turmeric Paste"],
+        "🧪 Extracts & Oils": ["Curcumin Extract", "Curcumin Powder", "Turmeric Essential Oil", "Turmeric Oleoresin", "Turmeric Resin"],
+        "🌿 Organic & Premium Varieties": ["Lakadong Turmeric", "Salem Turmeric", "Erode Turmeric", "Rajapuri Turmeric", "Alleppey Turmeric", "Black Turmeric", "White Turmeric", "Wild Turmeric"],
+        "🍵 Food & Health Products": ["Turmeric Tea", "Turmeric Latte Mix", "Turmeric Milk Mix", "Turmeric Juice", "Turmeric Pickle", "Turmeric Candy", "Health Drink Mix", "Turmeric Capsules", "Turmeric Tablets"],
+        "💄 Herbal & Cosmetic Products": ["Turmeric Soap", "Turmeric Face Pack", "Turmeric Cream", "Turmeric Face Wash", "Turmeric Scrub", "Turmeric Essential Oil Blend"]
+    }
+
+    for cat_name, products in TAXONOMY.items():
+        emoji = cat_name[0]
+        name = cat_name[1:].strip()
+        cat = ProductCategory(name=name, emoji=emoji)
+        db.add(cat)
+        db.commit()
+        db.refresh(cat)
+        
+        for prod_name in products:
+            prod = ProductType(name=prod_name, category_id=cat.id)
+            db.add(prod)
+        db.commit()
 
     # Seed farmers for FPO 1 Nashik
     farmer1 = Farmer(fpo_id=1, name="Ramesh Patil")
@@ -687,8 +734,8 @@ def test_scoring_recalculation_late_vs_timely_deposit(setup_db):
     assert buyer is not None
     initial_score = buyer.reliability_score
 
-    fpo_user = db.query(User).filter(User.role_type == RoleType.fpo).first()
-    access_token = create_access_token(data={"sub": str(fpo_user.id)})
+    buyer_user = db.query(User).filter(User.role_type == RoleType.buyer).first()
+    access_token = create_access_token(data={"sub": str(buyer_user.id)})
     headers = {"Authorization": f"Bearer {access_token}"}
 
     contract = Contract(
@@ -760,7 +807,8 @@ def test_scoring_recalculation_dispute_lost(setup_db):
         buyer_id=buyer.id,
         fpo_id=1,
         description="Testing dispute score deduction",
-        status=DisputeStatus.pending
+        status=DisputeStatus.pending,
+        creator_role="fpo"
     )
     db.add(dispute)
     db.commit()
@@ -770,4 +818,210 @@ def test_scoring_recalculation_dispute_lost(setup_db):
     db.refresh(buyer)
     # Floor is now 0 (matches infographic 0–100 range; was previously max(40, ...))
     assert buyer.reliability_score == max(0, initial_score - 10)
+    db.close()
+
+def test_product_taxonomy_endpoints(setup_db):
+    db = SessionLocal()
+    from app.models.product_category import ProductCategory
+    cat = db.query(ProductCategory).filter(ProductCategory.name == "Raw Turmeric").first()
+    assert cat is not None
+
+    resp = client.get("/lots/product-categories")
+    assert resp.status_code == 200
+    cats = resp.json()
+    assert len(cats) >= 6
+    assert any(c["name"] == "Raw Turmeric" for c in cats)
+
+    resp_prods = client.get(f"/lots/product-categories/{cat.id}/products")
+    assert resp_prods.status_code == 200
+    prods = resp_prods.json()
+    assert len(prods) > 0
+    assert any(p["name"] == "Fresh Turmeric" for p in prods)
+    db.close()
+
+def test_buyer_preferences_endpoints(setup_db):
+    db = SessionLocal()
+    buyer_user = db.query(User).filter(User.role_type == RoleType.buyer).first()
+    assert buyer_user is not None
+    access_token = create_access_token(data={"sub": str(buyer_user.id)})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Retrieve initial preferences
+    resp_get = client.get("/lots/buyers/preferences", headers=headers)
+    assert resp_get.status_code == 200
+    data = resp_get.json()
+    assert "categories" in data
+    assert "productTypes" in data
+
+    # Update preferences
+    payload = {"categories": [1, 2], "product_types": [3, 4]}
+    resp_post = client.post("/lots/buyers/preferences", json=payload, headers=headers)
+    assert resp_post.status_code == 200
+    updated_data = resp_post.json()
+    assert updated_data["categories"] == [1, 2]
+    assert updated_data["productTypes"] == [3, 4]
+
+    # Verify retrieval
+    resp_get2 = client.get("/lots/buyers/preferences", headers=headers)
+    assert resp_get2.json()["categories"] == [1, 2]
+    db.close()
+
+def test_lot_upload_taxonomy_validation(setup_db):
+    db = SessionLocal()
+    fpo_user = db.query(User).filter(User.role_type == RoleType.fpo).first()
+    assert fpo_user is not None
+    access_token = create_access_token(data={"sub": str(fpo_user.id)})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # 1. Missing categoryId
+    payload_no_cat = {
+        "description": "Taxonomy Test",
+        "qty": 10.0,
+        "grade": "Premium",
+        "priceExpectation": 120.0,
+        "location": "Nashik, MH"
+    }
+    resp1 = client.post("/lots", headers=headers, data=payload_no_cat)
+    assert resp1.status_code == 400
+    assert "categoryId is required" in resp1.json()["detail"]
+
+    # 2. Missing productTypeId and customProductName
+    payload_missing_both = {**payload_no_cat, "categoryId": 1}
+    resp2 = client.post("/lots", headers=headers, data=payload_missing_both)
+    assert resp2.status_code == 400
+    assert "Either productTypeId or customProductName must be set" in resp2.json()["detail"]
+
+    # 3. Both productTypeId and customProductName set
+    payload_both = {**payload_no_cat, "categoryId": 1, "productTypeId": 1, "customProductName": "Custom Name"}
+    resp3 = client.post("/lots", headers=headers, data=payload_both)
+    assert resp3.status_code == 400
+    assert "Cannot set both productTypeId and customProductName" in resp3.json()["detail"]
+
+    # 4. Valid upload with productTypeId
+    from app.models.product_category import ProductCategory
+    from app.models.product_type import ProductType
+    cat = db.query(ProductCategory).filter(ProductCategory.name == "Raw Turmeric").first()
+    prod = db.query(ProductType).filter(ProductType.category_id == cat.id).first()
+
+    payload_valid = {**payload_no_cat, "categoryId": cat.id, "productTypeId": prod.id}
+    resp4 = client.post("/lots", headers=headers, data=payload_valid)
+    assert resp4.status_code == 200
+    lot_data = resp4.json()
+    assert lot_data["categoryId"] == cat.id
+    assert lot_data["productTypeId"] == prod.id
+    assert lot_data["customProductName"] is None
+    db.close()
+
+def test_taxonomy_matching(setup_db):
+    db = SessionLocal()
+    from app.models.product_category import ProductCategory
+    from app.models.product_type import ProductType
+    from app.models.user import BuyerProductPreference
+    
+    # Pre-fetch target categories/products
+    raw_turmeric_cat = db.query(ProductCategory).filter(ProductCategory.name == "Raw Turmeric").first()
+    processed_cat = db.query(ProductCategory).filter(ProductCategory.name == "Processed Turmeric").first()
+    fresh_turmeric_prod = db.query(ProductType).filter(ProductType.name == "Fresh Turmeric").first()
+    powder_prod = db.query(ProductType).filter(ProductType.name == "Turmeric Powder").first()
+
+    # Clear preferences for all buyers
+    db.query(BuyerProductPreference).delete()
+    db.query(Buyer).filter(Buyer.id > 3).delete()
+    db.commit()
+
+    # Set buyer 1 preference: Fresh Turmeric specifically
+    buyer1 = db.query(Buyer).filter(Buyer.id == 1).first()
+    db.add(BuyerProductPreference(buyer_id=buyer1.id, product_type_id=fresh_turmeric_prod.id))
+
+    # Set buyer 2 preference: Whole Processed Turmeric category
+    buyer2 = db.query(Buyer).filter(Buyer.id == 2).first()
+    db.add(BuyerProductPreference(buyer_id=buyer2.id, category_id=processed_cat.id))
+
+    # Set buyer 3 preference: Turmeric Powder specifically
+    buyer3 = db.query(Buyer).filter(Buyer.id == 3).first()
+    db.add(BuyerProductPreference(buyer_id=buyer3.id, product_type_id=powder_prod.id))
+    db.commit()
+
+    fpo_user = db.query(User).filter(User.role_type == RoleType.fpo).first()
+    access_token = create_access_token(data={"sub": str(fpo_user.id)})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # 1. Upload Fresh Turmeric lot (Category: Raw Turmeric, Product: Fresh Turmeric)
+    payload_fresh = {
+        "description": "Fresh Turmeric Lot",
+        "qty": 10.0,
+        "grade": "Premium",
+        "priceExpectation": 120.0,
+        "location": "Nashik, MH",
+        "categoryId": raw_turmeric_cat.id,
+        "productTypeId": fresh_turmeric_prod.id
+    }
+    resp1 = client.post("/lots", headers=headers, data=payload_fresh)
+    assert resp1.status_code == 200
+    lot1_id = resp1.json()["id"]
+
+    # Verify only Buyer 1 matched (Buyer 2 & 3 do not match Raw Turmeric / Fresh Turmeric)
+    resp_matches1 = client.get(f"/lots/{lot1_id}/matches", headers=headers)
+    matches1 = resp_matches1.json()
+    assert len(matches1) == 1
+    assert matches1[0]["buyerName"] == buyer1.name
+
+    # 2. Upload Custom name lot (Category: Processed Turmeric, customProductName: "Other Spice")
+    payload_custom = {
+        "description": "Other Spice Lot",
+        "qty": 5.0,
+        "grade": "A",
+        "priceExpectation": 150.0,
+        "location": "Nashik, MH",
+        "categoryId": processed_cat.id,
+        "customProductName": "Other Spice"
+    }
+    resp2 = client.post("/lots", headers=headers, data=payload_custom)
+    assert resp2.status_code == 200
+    lot2_id = resp2.json()["id"]
+
+    # Verify fallback matching: Buyer 2 matches (interested in Processed Turmeric category).
+    # Buyer 3 also matches because they are interested in Turmeric Powder (which belongs to Processed Turmeric category).
+    # Buyer 1 does not match because they are interested in Raw Turmeric.
+    resp_matches2 = client.get(f"/lots/{lot2_id}/matches", headers=headers)
+    matches2 = resp_matches2.json()
+    matched_names = {m["buyerName"] for m in matches2}
+    assert buyer2.name in matched_names
+    assert buyer3.name in matched_names
+    assert buyer1.name not in matched_names
+    db.close()
+
+def test_buyer_onboarding_and_require_role_interceptor(setup_db):
+    db = SessionLocal()
+    buyer_user = db.query(User).filter(User.role_type == RoleType.buyer).first()
+    buyer = db.query(Buyer).filter(Buyer.id == buyer_user.buyer_id).first()
+    
+    # 1. Force onboarding_completed to False
+    buyer.onboarding_completed = False
+    db.commit()
+    
+    access_token = create_access_token(data={"sub": str(buyer_user.id)})
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    # 2. Block access to non-onboarding routes
+    resp_lots = client.get("/lots", headers=headers)
+    assert resp_lots.status_code == 403
+    assert "Onboarding not completed" in resp_lots.json()["detail"]
+    
+    # 3. Allow access to allowed onboarding routes
+    resp_prefs_get = client.get("/lots/buyers/me/product-preferences", headers=headers)
+    assert resp_prefs_get.status_code == 200
+    
+    # 4. Save preferences
+    pref_payload = {"categories": [1], "product_types": [1]}
+    resp_prefs_post = client.post("/lots/buyers/me/product-preferences", headers=headers, json=pref_payload)
+    assert resp_prefs_post.status_code == 200
+    
+    # 5. Complete onboarding
+    resp_complete = client.post("/lots/buyers/me/onboarding-complete", headers=headers)
+    assert resp_complete.status_code == 200
+    
+    # 6. Unblocked access to non-onboarding routes
+    resp_lots_after = client.get("/lots", headers=headers)
+    assert resp_lots_after.status_code == 200
     db.close()

@@ -7,7 +7,7 @@ import {
   IconBuildingStore,
   IconUserCheck,
   IconBuilding,
-  IconUserCircle,
+  IconLock,
   IconLeaf,
 } from "@tabler/icons-react";
 import { roleConfig } from "@/lib/auth/roleConfig";
@@ -36,8 +36,8 @@ export default function AuthLandingPage() {
       activeRing: "ring-pur/30",
     },
     {
-      id: "consultant",
-      icon: IconUserCircle,
+      id: "escrow",
+      icon: IconLock,
       color: "border-info bg-info-bg/60 text-info",
       activeRing: "ring-info/30",
     },

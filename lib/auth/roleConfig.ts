@@ -28,11 +28,11 @@ export const roleConfig: Record<string, RoleDetails> = {
     loginMethods: ["google", "otp"],
     redirectPath: "/mahafpc",
   },
-  consultant: {
-    label: "Consultant / Agent",
-    description: "Intermediary advisor matching growers with commercial quotes",
-    registerFields: ["fullName", "email", "mobile", "associatedFpo", "idProof"],
+  escrow: {
+    label: "Escrow Service",
+    description: "Third-party payment release and ledger verification officer",
+    registerFields: [],
     loginMethods: ["google", "otp"],
-    redirectPath: "/portal",
+    redirectPath: "/escrow",
   },
 };

@@ -6,7 +6,7 @@ import { useApp } from "@/context/AppContext";
 import { IconX, IconLock, IconShieldCheck, IconChevronDown, IconPackage, IconPhone, IconUser, IconBuilding, IconTrash, IconPlus, IconBook } from "@tabler/icons-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
-
+import { ProductPreferenceSelector } from "@/components/ProductPreferenceSelector";
 const getInitials = (name: string, email: string): string => {
   const str = (name || email || "M").trim();
   const words = str.split(/\s+/);
@@ -42,12 +42,19 @@ export const Modal: React.FC = () => {
     assignUserRole,
     currentRole,
     showToast,
+    updateDisputeStatus,
+    sendDisputeMessage,
+    disputes,
+    fetchDataFromBackend,
   } = useApp();
 
   const [priceInput, setPriceInput] = useState("");
   const [qtyInput, setQtyInput] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [fpoAction, setFpoAction] = useState<"accept" | "reject" | "counter">("accept");
+
+  const [disputeReplyText, setDisputeReplyText] = useState("");
+  const [disputeAttachmentUrl, setDisputeAttachmentUrl] = useState("");
 
   const [aadhaarNum, setAadhaarNum] = useState("4829 1029 3847");
   const [mobileNum, setMobileNum] = useState("");
@@ -75,7 +82,8 @@ export const Modal: React.FC = () => {
   const [newMemberName, setNewMemberName] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState("Employee");
-  const [activeProfileTab, setActiveProfileTab] = useState<"business" | "members">("business");
+  const [profilePrefs, setProfilePrefs] = useState<{ categoryId: number; productTypeId?: number; customProductName?: string }[]>([]);
+  const [activeProfileTab, setActiveProfileTab] = useState<"business" | "members" | "preferences">("business");
 
   useEffect(() => {
     if (modal.type === "quote-response" && modal.data?.quote) {
@@ -103,8 +111,23 @@ export const Modal: React.FC = () => {
             const data = await res.json();
             setProfileMembers(data);
           }
+
+          if (currentRole === "buyer" || currentRole === "fpo") {
+            const resPrefs = await fetch(`http://localhost:8000/lots/${currentRole}s/me/product-preferences`, {
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (resPrefs.ok) {
+              const data = await resPrefs.json();
+              const mapped = (data.rows || []).map((row: any) => ({
+                categoryId: row.categoryId,
+                productTypeId: row.productTypeId,
+                customProductName: row.customProductName
+              }));
+              setProfilePrefs(mapped);
+            }
+          }
         } catch (err) {
-          console.error("Failed to load members:", err);
+          console.error("Failed to load user-profile data:", err);
         }
       };
       fetchMembers();
@@ -290,7 +313,7 @@ export const Modal: React.FC = () => {
     const contract = modal.data?.contract;
     if (!contract) return null;
 
-    const handleGenerateOtp = () => {
+    const handleGenerateOtp = async () => {
       if (!aadhaarNum.replace(/\s/g, "").match(/^\d{12}$/)) {
         alert("Please enter a valid 12-digit Aadhaar number.");
         return;
@@ -300,56 +323,70 @@ export const Modal: React.FC = () => {
         return;
       }
 
-      // Generate random 6-digit OTP code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOtp(code);
-
-      // Attempt to send real SMS OTP using free Textbelt gateway API
-      const cleanPhone = mobileNum.replace(/\s/g, "");
-      const fullPhone = cleanPhone.startsWith("+") ? cleanPhone : `+91${cleanPhone}`;
-
-      const params = new URLSearchParams();
-      params.append("phone", fullPhone);
-      params.append("message", `MahaFPC eSign Verification OTP: ${code}. Valid for 10 minutes.`);
-      params.append("key", "textbelt");
-
-      fetch("https://textbelt.com/text", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: params.toString(),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
-            showToast(`Actual SMS OTP sent successfully to ${mobileNum}!`, "success");
-          } else {
-            console.warn("Textbelt free limit hit:", data.error);
-            showToast(`OTP Sent to Aadhaar-linked mobile successfully!`, "success");
-          }
-          setOtpInput(code); // Auto-populate in input box!
-        })
-        .catch((err) => {
-          console.warn("Textbelt fetch failed:", err);
-          showToast(`OTP Sent to Aadhaar-linked mobile successfully!`, "success");
-          setOtpInput(code); // Auto-populate in input box!
+      try {
+        const cleanPhone = mobileNum.replace(/\s/g, "");
+        const response = await fetch("http://localhost:8000/auth/otp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mobile_number: cleanPhone,
+            purpose: "esign"
+          }),
         });
 
-      setOtpSent(true);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || "Failed to send OTP.");
+        }
+
+        const data = await response.json();
+        
+        // Auto-populate generated OTP if in Dev Mode
+        if (data.otp) {
+          setGeneratedOtp(data.otp);
+          setOtpInput(data.otp);
+          showToast(`[Dev Mode] OTP auto-populated: ${data.otp}`, "info");
+        } else {
+          setGeneratedOtp("");
+          setOtpInput("");
+        }
+
+        showToast(`OTP Sent to Aadhaar-linked mobile successfully!`, "success");
+        setOtpSent(true);
+      } catch (err: any) {
+        console.error("eSign OTP sending error:", err);
+        alert(`Failed to send OTP: ${err.message}. Make sure Twilio credentials are correct or backend OTP_DEV_MODE is true.`);
+      }
     };
 
-    const handleConfirmSign = (e: React.FormEvent) => {
+    const handleConfirmSign = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!agreeChecked) return;
 
-      const expectedOtp = generatedOtp || "123456";
-      if (otpInput.trim() !== expectedOtp && otpInput.trim() !== "123456") {
-        alert("Incorrect OTP code. Please enter the correct OTP sent to your phone (or use '123456' as the default fallback).");
-        return;
-      }
+      try {
+        const cleanPhone = mobileNum.replace(/\s/g, "");
+        const response = await fetch("http://localhost:8000/auth/otp/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mobile_number: cleanPhone,
+            otp: otpInput.trim(),
+            purpose: "esign"
+          }),
+        });
 
-      signContract(contract.id, "esign");
-      closeModal();
-      showToast(`Contract ${contract.id} signed and escrow funds deposited.`, "success");
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || "Invalid OTP code.");
+        }
+
+        signContract(contract.id, "esign");
+        closeModal();
+        showToast(`Contract ${contract.id} signed and escrow funds deposited.`, "success");
+      } catch (err: any) {
+        console.error("eSign OTP verification error:", err);
+        alert(`Verification failed: ${err.message}. Please enter the correct OTP.`);
+      }
     };
 
     const maskedMobile = mobileNum.length >= 4 
@@ -422,15 +459,47 @@ export const Modal: React.FC = () => {
       mahafpc: "MahaFPC Regulator",
       portal: "AI Portal Daemon",
       escrow: "Escrow Manager",
-      admin: "Platform Admin",
-      consultant: "Consultant / Agent"
+      admin: "Platform Admin"
     };
 
     const displayRole = currentRole ? roleLabels[currentRole] || currentRole : "User";
 
-    const handleSave = (e: React.FormEvent) => {
+    const handleSave = async (e: React.FormEvent) => {
       e.preventDefault();
       assignUserRole(selectedRoleId ? parseInt(selectedRoleId) : null);
+      
+      if (currentRole === "buyer" || currentRole === "fpo") {
+        try {
+          const token = localStorage.getItem("token");
+          const categoriesList = Array.from(new Set(profilePrefs.map(p => p.categoryId).filter(Boolean)));
+          const productTypesList = Array.from(new Set(profilePrefs.map(p => p.productTypeId).filter((id): id is number => !!id)));
+
+          const res = await fetch(`http://localhost:8000/lots/${currentRole}s/me/product-preferences`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              categories: categoriesList,
+              product_types: productTypesList,
+              rows: profilePrefs.map(p => ({
+                category_id: p.categoryId,
+                product_type_id: p.productTypeId,
+                custom_product_name: p.customProductName
+              }))
+            })
+          });
+          if (!res.ok) {
+            throw new Error("Failed to save product preferences.");
+          }
+          fetchDataFromBackend();
+        } catch (err: any) {
+          showToast(err.message, "error");
+          return;
+        }
+      }
+      
       showToast("Profile settings saved successfully!", "success");
       closeModal();
     };
@@ -740,133 +809,185 @@ export const Modal: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: Authorized Google OAuth Accounts (col-span-7) */}
+          {/* Right Column */}
           <div className="lg:col-span-7 space-y-6 lg:border-l lg:border-bd-t lg:pl-10 flex flex-col justify-between">
             <div className="space-y-4 flex-1">
-              <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
-                <IconShieldCheck className="w-5 h-5 text-primary" />
-                <span>Authorized Google OAuth Accounts</span>
-              </h3>
-              <p className="text-xs text-tx-s leading-relaxed">
-                Add and manage Google accounts authorized to log in under your organization. Authorized accounts can bypass standard sign-in restrictions.
-              </p>
-
-              {/* Members List styled as cards/boxes */}
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
-                {profileMembers.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-tx-t border border-dashed border-bd-t rounded-xl bg-bg-s/30">
-                    No authorized Google accounts registered.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {profileMembers.map((m, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-bg-s border border-bd-t rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm hover:shadow-md hover:border-bd-s transition-all"
-                      >
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 shadow-inner">
-                            {getInitials(m.name, m.email)}
-                          </div>
-                          <div className="overflow-hidden">
-                            <div className="text-sm font-semibold text-tx-p truncate flex items-center gap-2 flex-wrap">
-                              <span>{m.name}</span>
-                              <span className="text-[9px] bg-bg-t text-primary border border-bd-t px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
-                                {m.role}
-                              </span>
-                              {getStatusBadge(m.status)}
-                            </div>
-                            <div className="text-xs text-tx-s font-medium mt-0.5 truncate">{m.email}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                          {m.status === "Pending" && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleApproveMember(m.id!)}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded shadow-sm transition-all"
-                                title="Approve Registration"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRejectMember(m.id!)}
-                                className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded shadow-sm transition-all"
-                                title="Reject Registration"
-                              >
-                                Reject
-                              </button>
-                            </>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMember(m.id!)}
-                            className="p-2 rounded-lg text-tx-t hover:text-danger hover:bg-danger/10 transition-all shrink-0"
-                            title="Remove Authorization"
-                          >
-                            <IconTrash className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Add member form */}
-            <div className="border-t border-bd-t pt-5 space-y-4">
-              <h4 className="text-sm font-bold text-tx-p uppercase tracking-wider">
-                Invite & Authorize New Member
-              </h4>
-              <p className="text-[11px] text-tx-s font-semibold leading-relaxed max-w-xl">
-                * Note: Adding a member generates a secure registration link logged in the notifications registry. The member must set their password and receive your final approval before logging in.
-              </p>
-              <div className="space-y-4 bg-bg-s/40 border border-bd-t rounded-xl p-4 md:p-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Member Full Name"
-                    placeholder="e.g. Ramesh More"
-                    value={newMemberName}
-                    onChange={(e) => setNewMemberName(e.target.value)}
-                    floating={false}
-                  />
-                  <Input
-                    label="Google Email Address (for Sign-In)"
-                    placeholder="e.g. ramesh@gmail.com"
-                    type="email"
-                    value={memberEmail}
-                    onChange={(e) => setMemberEmail(e.target.value)}
-                    floating={false}
-                  />
-                </div>
-                <div className="flex flex-col md:flex-row gap-4 items-end">
-                  <div className="flex-1 w-full">
-                    <label className="block text-[10px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">
-                      Role / Position
-                    </label>
-                    <select
-                      value={newMemberRole}
-                      onChange={(e) => setNewMemberRole(e.target.value)}
-                      className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-primary text-xs h-[38px]"
-                    >
-                      <option value="Manager">Manager</option>
-                      <option value="Employee">Employee</option>
-                      <option value="Director">Director</option>
-                      <option value="Agent">Agent</option>
-                    </select>
-                  </div>
-                  <Button
+              
+              {/* Buyer/FPO Tab Toggle */}
+              {(currentRole === "buyer" || currentRole === "fpo") && (
+                <div className="flex gap-2 border-b border-bd-t pb-3 mb-4 text-[12px] font-bold uppercase tracking-wider">
+                  <button
                     type="button"
-                    onClick={handleAddMember}
-                    className="h-[38px] flex items-center justify-center px-6 w-full md:w-auto shrink-0"
+                    onClick={() => setActiveProfileTab("members")}
+                    className={`px-3 py-1.5 rounded-lg border transition-all ${
+                      activeProfileTab === "members"
+                        ? "bg-primary text-white border-primary"
+                        : "bg-bg-s border-bd-s text-tx-s hover:text-tx-p"
+                    }`}
                   >
-                    <IconPlus className="w-4 h-4 mr-1.5" /> Authorize Account
-                  </Button>
+                    Team Members
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveProfileTab("preferences")}
+                    className={`px-3 py-1.5 rounded-lg border transition-all ${
+                      activeProfileTab === "preferences"
+                        ? "bg-primary text-white border-primary"
+                        : "bg-bg-s border-bd-s text-tx-s hover:text-tx-p"
+                    }`}
+                  >
+                    Product Preferences
+                  </button>
                 </div>
-              </div>
+              )}
+
+              {/* Preferences Tab View */}
+              {(currentRole === "buyer" || currentRole === "fpo") && activeProfileTab === "preferences" ? (
+                <div className="space-y-4">
+                  <div className="pb-2 border-b border-bd-t">
+                    <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
+                      <IconShieldCheck className="w-5 h-5 text-primary" />
+                      <span>Product Preferences Selection</span>
+                    </h3>
+                    <p className="text-xs text-tx-s mt-1 leading-relaxed">
+                      Select categories or specific product types you wish to trade. Saved preferences are matched against incoming supplier lots automatically.
+                    </p>
+                  </div>
+                  <ProductPreferenceSelector
+                    preferences={profilePrefs}
+                    onChange={(newPrefs) => setProfilePrefs(newPrefs)}
+                    role={currentRole as "buyer" | "fpo"}
+                  />
+                </div>
+              ) : (
+                /* Members Tab View */
+                <>
+                  <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
+                    <IconShieldCheck className="w-5 h-5 text-primary" />
+                    <span>Authorized Google OAuth Accounts</span>
+                  </h3>
+                  <p className="text-xs text-tx-s leading-relaxed">
+                    Add and manage Google accounts authorized to log in under your organization. Authorized accounts can bypass standard sign-in restrictions.
+                  </p>
+
+                  {/* Members List styled as cards/boxes */}
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                    {profileMembers.length === 0 ? (
+                      <div className="text-center py-8 text-sm text-tx-t border border-dashed border-bd-t rounded-xl bg-bg-s/30">
+                        No authorized Google accounts registered.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {profileMembers.map((m, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-bg-s border border-bd-t rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm hover:shadow-md hover:border-bd-s transition-all"
+                          >
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 shadow-inner">
+                                {getInitials(m.name, m.email)}
+                              </div>
+                              <div className="overflow-hidden">
+                                <div className="text-sm font-semibold text-tx-p truncate flex items-center gap-2 flex-wrap">
+                                  <span>{m.name}</span>
+                                  <span className="text-[9px] bg-bg-t text-primary border border-bd-t px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                    {m.role}
+                                  </span>
+                                  {getStatusBadge(m.status)}
+                                </div>
+                                <div className="text-xs text-tx-s font-medium mt-0.5 truncate">{m.email}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                              {m.status === "Pending" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveMember(m.id!)}
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded shadow-sm transition-all"
+                                    title="Approve Registration"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRejectMember(m.id!)}
+                                    className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded shadow-sm transition-all"
+                                    title="Reject Registration"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMember(m.id!)}
+                                className="p-2 rounded-lg text-tx-t hover:text-danger hover:bg-danger/10 transition-all shrink-0"
+                                title="Remove Authorization"
+                              >
+                                <IconTrash className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Add member form */}
+                  <div className="border-t border-bd-t pt-5 space-y-4">
+                    <h4 className="text-sm font-bold text-tx-p uppercase tracking-wider">
+                      Invite & Authorize New Member
+                    </h4>
+                    <p className="text-[11px] text-tx-s font-semibold leading-relaxed max-w-xl">
+                      * Note: Adding a member generates a secure registration link logged in the notifications registry. The member must set their password and receive your final approval before logging in.
+                    </p>
+                    <div className="space-y-4 bg-bg-s/40 border border-bd-t rounded-xl p-4 md:p-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          label="Member Full Name"
+                          placeholder="e.g. Ramesh More"
+                          value={newMemberName}
+                          onChange={(e) => setNewMemberName(e.target.value)}
+                          floating={false}
+                        />
+                        <Input
+                          label="Google Email Address (for Sign-In)"
+                          placeholder="e.g. ramesh@gmail.com"
+                          type="email"
+                          value={memberEmail}
+                          onChange={(e) => setMemberEmail(e.target.value)}
+                          floating={false}
+                        />
+                      </div>
+                      <div className="flex flex-col md:flex-row gap-4 items-end">
+                        <div className="flex-1 w-full">
+                          <label className="block text-[10px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">
+                            Role / Position
+                          </label>
+                          <select
+                            value={newMemberRole}
+                            onChange={(e) => setNewMemberRole(e.target.value)}
+                            className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-primary text-xs h-[38px]"
+                          >
+                            <option value="Manager">Manager</option>
+                            <option value="Employee">Employee</option>
+                            <option value="Director">Director</option>
+                            <option value="Agent">Agent</option>
+                          </select>
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={handleAddMember}
+                          className="h-[38px] flex items-center justify-center px-6 w-full md:w-auto shrink-0"
+                        >
+                          <IconPlus className="w-4 h-4 mr-1.5" /> Authorize Account
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1121,6 +1242,145 @@ export const Modal: React.FC = () => {
     );
   };
 
+  const renderDisputeDetails = () => {
+    const disputeData = modal.data?.dispute;
+    if (!disputeData) return null;
+
+    // Retrieve from state to ensure updates display immediately
+    const dispute = disputes.find((d) => d.id === disputeData.id) || disputeData;
+
+    const handleSendReply = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!disputeReplyText.trim()) return;
+
+      await sendDisputeMessage(dispute.id, disputeReplyText.trim(), disputeAttachmentUrl.trim() || undefined);
+      setDisputeReplyText("");
+      setDisputeAttachmentUrl("");
+    };
+
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between border-b border-bd-t pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-red-bg text-red-accent shrink-0">
+              <IconLock className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="card-title flex items-center gap-2">
+                <span>Dispute {dispute.id}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                  dispute.status === "Resolved" ? "bg-emerald-bg text-emerald-accent" :
+                  dispute.status === "Rejected" ? "bg-red-bg text-red-accent" :
+                  dispute.status === "In Review" ? "bg-amb-bg text-amb" : "bg-teal-bg text-teal-accent"
+                }`}>
+                  {dispute.status}
+                </span>
+              </h2>
+              <p className="text-xs text-tx-s mt-0.5">{dispute.type} &middot; Lot {dispute.lotId}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Info Grid */}
+        <div className="grid grid-cols-2 gap-4 bg-bg-s p-3 rounded-lg border border-bd-t text-xs font-semibold">
+          <div>
+            <span className="text-tx-s block text-[10px] uppercase">Filed By</span>
+            <span className="text-tx-p">{dispute.creatorRole === "buyer" ? dispute.buyerName : dispute.fpoName} ({dispute.creatorRole.toUpperCase()})</span>
+          </div>
+          <div>
+            <span className="text-tx-s block text-[10px] uppercase">Against Party</span>
+            <span className="text-tx-p">{dispute.creatorRole === "buyer" ? dispute.fpoName : dispute.buyerName}</span>
+          </div>
+          <div>
+            <span className="text-tx-s block text-[10px] uppercase">Date Filed</span>
+            <span className="text-tx-p">{new Date(dispute.filedAt).toLocaleDateString()}</span>
+          </div>
+          {dispute.attachmentUrl && (
+            <div>
+              <span className="text-tx-s block text-[10px] uppercase">Attachment</span>
+              <a href={dispute.attachmentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline font-bold">
+                📎 View File
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Message Thread */}
+        <div className="space-y-3.5 max-h-[220px] overflow-y-auto pr-1">
+          {dispute.messages && dispute.messages.length > 0 ? (
+            dispute.messages.map((m: any, idx: number) => (
+              <div key={idx} className={`p-3 rounded-xl border max-w-[85%] space-y-1 ${
+                m.senderRole === currentRole ? "ml-auto bg-primary/10 border-primary/20" : "bg-bg-p border-bd-t"
+              }`}>
+                <div className="flex items-center justify-between text-[10px] font-bold text-tx-s">
+                  <span>{m.senderName} ({m.senderRole.toUpperCase()})</span>
+                  <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <p className="text-xs text-tx-p leading-relaxed font-medium">{m.message}</p>
+                {m.attachmentUrl && (
+                  <a href={m.attachmentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-[10px] flex items-center gap-1 font-semibold pt-0.5">
+                    📎 View Attachment
+                  </a>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-tx-t text-xs">No conversation history.</p>
+          )}
+        </div>
+
+        {/* Regulator Actions (Admin/MahaFPC Only) */}
+        {((currentRole as any) === "admin" || currentRole === "mahafpc") && (
+          <div className="border-t border-bd-t pt-4 space-y-2">
+            <h4 className="text-[11px] font-bold text-tx-s uppercase tracking-wider">Regulator Arbitration Actions</h4>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={() => updateDisputeStatus(dispute.id, "In Review")} disabled={dispute.status === "In Review"}>
+                Investigate
+              </Button>
+              <Button type="button" size="sm" className="bg-emerald-accent hover:bg-emerald-m text-white" onClick={() => updateDisputeStatus(dispute.id, "Resolved")} disabled={dispute.status === "Resolved"}>
+                Uphold & Resolve
+              </Button>
+              <Button type="button" size="sm" className="bg-red-accent hover:bg-red-m text-white" onClick={() => updateDisputeStatus(dispute.id, "Rejected")} disabled={dispute.status === "Rejected"}>
+                Reject Claim
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Reply Box */}
+        {dispute.status !== "Resolved" && dispute.status !== "Rejected" ? (
+          <form onSubmit={handleSendReply} className="border-t border-bd-t pt-4 space-y-3.5">
+            <Textarea
+              label="Write Response Message"
+              value={disputeReplyText}
+              onChange={(e) => setDisputeReplyText(e.target.value)}
+              placeholder="Provide evidence, response statements, or updates..."
+              rows={2}
+              required
+            />
+            <div className="flex gap-3.5 items-end">
+              <div className="flex-1">
+                <Input
+                  label="Attachment URL (optional)"
+                  type="text"
+                  value={disputeAttachmentUrl}
+                  onChange={(e) => setDisputeAttachmentUrl(e.target.value)}
+                  placeholder="e.g. http://imgur.com/evidence.jpg"
+                  floating={false}
+                />
+              </div>
+              <Button type="submit" size="md">Send Reply</Button>
+            </div>
+          </form>
+        ) : (
+          <div className="border-t border-bd-t pt-4 text-center text-xs font-semibold text-tx-s">
+            This case is closed. No further messages can be added.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <AnimatePresence>
       {modal.type && (
@@ -1178,6 +1438,7 @@ export const Modal: React.FC = () => {
             {modal.type === "user-profile" && renderUserProfile()}
             {modal.type === "buyer-lot-details" && renderBuyerLotDetails()}
             {modal.type === "user-guide" && renderUserGuide()}
+            {modal.type === "dispute-details" && renderDisputeDetails()}
           </motion.div>
         </div>
       )}

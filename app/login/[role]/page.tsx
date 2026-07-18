@@ -108,8 +108,12 @@ export default function LoginPage() {
       loginAsRole(role as any);
       showToast(`Welcome back, ${data.name}!`, "success");
       
-      // Redirect to role dashboard
-      router.push(config.redirectPath);
+      // Redirect to role dashboard or onboarding
+      if ((role === "buyer" || role === "fpo") && data.onboardingCompleted === false) {
+        router.push(`/onboarding/${role}`);
+      } else {
+        router.push(config.redirectPath);
+      }
     } catch (err: any) {
       showToast(err.message, "error");
     } finally {
@@ -150,7 +154,11 @@ export default function LoginPage() {
       
       loginAsRole(role as any);
       showToast(`Welcome back, ${data.name}!`, "success");
-      router.push(config.redirectPath);
+      if ((role === "buyer" || role === "fpo") && data.onboardingCompleted === false) {
+        router.push(`/onboarding/${role}`);
+      } else {
+        router.push(config.redirectPath);
+      }
     } catch (err: any) {
       showToast(err.message, "error");
     } finally {

@@ -21,6 +21,11 @@ export interface Lot {
   curcuminPercent?: number;
   harvestDate?: string;
   notes?: string;
+  categoryId?: number;
+  productTypeId?: number;
+  customProductName?: string;
+  productPhoto?: string | File | null;
+  labReport?: string | File | null;
 }
 
 export interface Quote {
@@ -44,22 +49,40 @@ export interface Contract {
   qty: number;
   price: number;
   amount: number; // in lakhs (₹)
-  status: "Draft" | "eSign pending" | "Signed";
+  status: "Draft" | "eSign pending" | "Signed" | "Dispatched" | "Delivered" | "GRN Issued" | "Disputed";
   fpoSigned: boolean;
   buyerSigned: boolean;
   escrowStatus: "Pending Deposit" | "Deposited" | "Released";
   grnNumber?: string;
+  ewayBill?: string;
+  gpsTrackingId?: string;
+  gstInvoice?: string;
+  dispatchedAt?: string;
+  isArchived?: boolean;
+  grnOverdue?: boolean;
+}
+
+export interface DisputeMessage {
+  id: number;
+  senderName: string;
+  senderRole: string;
+  message: string;
+  attachmentUrl?: string;
+  createdAt: string;
 }
 
 export interface Dispute {
   id: string;
-  type: "Quality mismatch" | "Payment delay";
+  type: "Quality mismatch" | "Payment delay" | string;
   lotId: string;
   buyerName: string;
   fpoName: string;
   description: string;
-  status: "Review" | "Pending" | "Resolved" | "In progress" | "Not resolved";
+  status: "Open" | "In Review" | "Resolved" | "Rejected" | "Review" | "Pending";
   filedAt: string;
+  creatorRole: string;
+  attachmentUrl?: string;
+  messages: DisputeMessage[];
 }
 
 export interface SystemLog {
@@ -68,6 +91,9 @@ export interface SystemLog {
   recipient: string;
   message: string;
   timestamp: string;
+  isRead: boolean;
+  recipientRole?: string;
+  eventType?: string;
 }
 
 export interface FarmerSplit {
@@ -121,7 +147,7 @@ interface AppContextType {
   ledger: LedgerEntry[];
   toasts: Toast[];
   modal: {
-    type: "quote-response" | "buyer-quote" | "buyer-counter" | "fpo-counter" | "buyer-esign" | "user-profile" | "buyer-lot-details" | "user-guide" | null;
+    type: "quote-response" | "buyer-quote" | "buyer-counter" | "fpo-counter" | "buyer-esign" | "user-profile" | "buyer-lot-details" | "user-guide" | "dispute-details" | null;
     data: any;
   };
   loginAsRole: (role: Role) => void;
@@ -148,10 +174,21 @@ interface AppContextType {
   submitBuyerCounter: (quoteId: string, price: number, msg?: string) => void;
   respondToQuote: (quoteId: string, action: "accept" | "reject" | "counter", counterPrice?: number) => void;
   signContract: (contractId: string, method: "esign" | "dsc") => void;
+  fundEscrow: (contractId: string) => Promise<void>;
+  dispatchGoods: (contractId: string) => Promise<void>;
+  issueGrn: (contractId: string) => Promise<void>;
   releaseFunds: (contractId: string) => void;
   resolveDispute: (disputeId: string) => void;
-  fileDispute: (type: Dispute["type"], lotId: string, description: string) => void;
-  updateDisputeStatus: (disputeId: string, status: Dispute["status"]) => void;
+  fileDispute: (type: string, lotId: string, description: string, attachmentUrl?: string) => Promise<void>;
+  updateDisputeStatus: (disputeId: string, status: string) => Promise<void>;
+  sendDisputeMessage: (disputeId: string, message: string, attachmentUrl?: string) => Promise<void>;
+  markAllLogsAsRead: () => Promise<void>;
+  fetchDataFromBackend: () => Promise<void>;
+  categories: any[];
+  buyerPreferences: { categories: number[]; product_types: number[]; rows?: any[] };
+  updateBuyerPreferences: (categories: number[], product_types: number[], rows?: any[]) => Promise<void>;
+  fpoPreferences: { categories: number[]; product_types: number[]; rows?: any[] };
+  updateFpoPreferences: (categories: number[], product_types: number[], rows?: any[]) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -190,6 +227,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [logs, setLogs] = useState<SystemLog[]>(initialLogs);
   const [splits, setSplits] = useState<FarmerSplit[]>(initialSplits);
   const [ledger, setLedger] = useState<LedgerEntry[]>(initialLedger);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [buyerPreferences, setBuyerPreferences] = useState<{ categories: number[]; product_types: number[]; rows?: any[] }>({ categories: [], product_types: [] });
+  const [fpoPreferences, setFpoPreferences] = useState<{ categories: number[]; product_types: number[]; rows?: any[] }>({ categories: [], product_types: [] });
 
   // Notifications and Modals
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -268,8 +308,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const resDisputes = await fetch("http://localhost:8000/disputes", { headers });
       if (resDisputes.ok) setDisputes(await resDisputes.json());
 
-      // Fetch Logs
-      const resLogs = await fetch("http://localhost:8000/logs", { headers });
+      // Fetch Logs — read role from localStorage since savedRole is scoped to useEffect
+      const storedRole = typeof window !== "undefined" ? localStorage.getItem("user_role") : null;
+      const activeRole = currentRole || storedRole;
+      const logsUrl = activeRole
+        ? `http://localhost:8000/logs?channel=System&role=${activeRole}`
+        : `http://localhost:8000/logs?channel=System`;
+      const resLogs = await fetch(logsUrl, { headers });
       if (resLogs.ok) setLogs(await resLogs.json());
 
       // Fetch Ledger
@@ -295,6 +340,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         setPermissions(permsMap);
       }
+
+      // Fetch Product Categories
+      const resCats = await fetch("http://localhost:8000/lots/product-categories", { headers });
+      if (resCats.ok) {
+        setCategories(await resCats.json());
+      }
+
+      // Fetch Buyer Preferences if role is buyer
+      if (activeRole === "buyer") {
+        const resPrefs = await fetch("http://localhost:8000/lots/buyers/preferences", { headers });
+        if (resPrefs.ok) {
+          setBuyerPreferences(await resPrefs.json());
+        }
+      }
+
+      // Fetch FPO Preferences if role is fpo
+      if (activeRole === "fpo") {
+        const resPrefs = await fetch("http://localhost:8000/lots/fpos/preferences", { headers });
+        if (resPrefs.ok) {
+          setFpoPreferences(await resPrefs.json());
+        }
+      }
     } catch (err) {
       console.error("Failed to load backend data:", err);
     }
@@ -312,7 +379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentRole]);
 
   // Actions
-  const uploadLot = async (lotData: Omit<Lot, "id" | "status" | "createdAt" | "fpoName">) => {
+  const uploadLot = async (lotData: any) => {
     try {
       const token = localStorage.getItem("token");
       const formData = new FormData();
@@ -321,6 +388,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       formData.append("grade", lotData.grade);
       formData.append("priceExpectation", lotData.priceExpectation.toString());
       if (lotData.location) formData.append("location", lotData.location);
+      if (lotData.categoryId) formData.append("categoryId", lotData.categoryId.toString());
+      if (lotData.productTypeId) formData.append("productTypeId", lotData.productTypeId.toString());
+      if (lotData.customProductName) formData.append("customProductName", lotData.customProductName);
 
       const curcumin = (lotData as any).curcuminPercent || (lotData as any).curcumin_percent || 4.0;
       formData.append("curcuminPercent", curcumin.toString());
@@ -329,6 +399,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       formData.append("harvestDate", harvest);
 
       if (lotData.notes) formData.append("notes", lotData.notes);
+      if (lotData.labReport) formData.append("labReport", lotData.labReport);
+      if (lotData.productPhoto) formData.append("productPhoto", lotData.productPhoto);
 
       const res = await fetch("http://localhost:8000/lots", {
         method: "POST",
@@ -460,17 +532,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new Error(errorData.detail || "Failed to sign contract.");
       }
 
-      const fundRes = await fetch(`http://localhost:8000/contracts/${contractId}/fund-escrow`, {
+      showToast(`Contract ${contractId} signed successfully!`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const fundEscrow = async (contractId: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/contracts/${contractId}/fund-escrow`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });
 
-      if (!fundRes.ok) {
-        const errorData = await fundRes.json();
+      if (!res.ok) {
+        const errorData = await res.json();
         throw new Error(errorData.detail || "Failed to fund escrow.");
       }
 
-      showToast(`Contract ${contractId} signed and escrow funded successfully!`, "success");
+      showToast(`Contract ${contractId} escrow funded successfully!`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const dispatchGoods = async (contractId: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/contracts/${contractId}/dispatch`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to dispatch goods.");
+      }
+
+      showToast(`Contract ${contractId} goods dispatched successfully!`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const issueGrn = async (contractId: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/contracts/${contractId}/issue-grn`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to issue GRN.");
+      }
+
+      showToast(`Contract ${contractId} GRN issued successfully!`, "success");
       await fetchDataFromBackend();
     } catch (err: any) {
       showToast(err.message, "error");
@@ -517,7 +639,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const fileDispute = async (type: Dispute["type"], lotId: string, description: string) => {
+  const fileDispute = async (type: string, lotId: string, description: string, attachmentUrl?: string) => {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch("http://localhost:8000/disputes", {
@@ -529,7 +651,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify({
           lot_id: lotId,
           type,
-          description
+          description,
+          attachmentUrl
         })
       });
 
@@ -539,18 +662,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const data = await res.json();
-      showToast(`Dispute ${data.id} filed successfully with MahaFPC.`, "success");
+      showToast(`Dispute ${data.id} opened successfully.`, "success");
       await fetchDataFromBackend();
     } catch (err: any) {
       showToast(err.message, "error");
     }
   };
 
-  const updateDisputeStatus = async (disputeId: string, status: Dispute["status"]) => {
-    if (status === "Resolved") {
-      await resolveDispute(disputeId);
-    } else {
-      showToast(`Dispute status update to ${status} requires Regulator dashboard.`, "info");
+  const updateDisputeStatus = async (disputeId: string, status: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/disputes/${disputeId}/status`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ status })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to update dispute status.");
+      }
+
+      showToast(`Dispute ${disputeId} status updated to ${status}.`, "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const sendDisputeMessage = async (disputeId: string, message: string, attachmentUrl?: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/disputes/${disputeId}/messages`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message,
+          attachmentUrl
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || "Failed to send message.");
+      }
+
+      showToast("Message added to dispute thread.", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
     }
   };
 
@@ -672,6 +838,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const markAllLogsAsRead = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:8000/logs/mark-all-read?role=${currentRole}`, {
+        method: "PUT",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setLogs(prev => prev.map(l => ({ ...l, isRead: true })));
+      }
+    } catch (err) {
+      console.error("Failed to mark all logs as read:", err);
+    }
+  };
+
+  const updateBuyerPreferences = async (categoriesList: number[], productTypesList: number[], rows?: any[]) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/lots/buyers/preferences", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ categories: categoriesList, product_types: productTypesList, rows })
+      });
+      if (!res.ok) {
+        throw new Error("Failed to update preferences.");
+      }
+      setBuyerPreferences({ categories: categoriesList, product_types: productTypesList, rows });
+      showToast("Procurement preferences saved successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
+  const updateFpoPreferences = async (categoriesList: number[], productTypesList: number[], rows?: any[]) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/lots/fpos/preferences", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ categories: categoriesList, product_types: productTypesList, rows })
+      });
+      if (!res.ok) {
+        throw new Error("Failed to update preferences.");
+      }
+      setFpoPreferences({ categories: categoriesList, product_types: productTypesList, rows });
+      showToast("Product preferences saved successfully!", "success");
+      await fetchDataFromBackend();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -706,10 +931,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         submitBuyerCounter,
         respondToQuote,
         signContract,
+        fundEscrow,
+        dispatchGoods,
+        issueGrn,
         releaseFunds,
         resolveDispute,
         fileDispute,
         updateDisputeStatus,
+        sendDisputeMessage,
+        markAllLogsAsRead,
+        fetchDataFromBackend,
+        categories,
+        buyerPreferences,
+        updateBuyerPreferences,
+        fpoPreferences,
+        updateFpoPreferences,
       }}
     >
       {children}

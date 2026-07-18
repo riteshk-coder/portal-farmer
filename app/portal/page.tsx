@@ -9,6 +9,7 @@ import { DataTable } from "@/components/DataTable";
 import { KpiCard } from "@/components/KpiCard";
 import { PageHeader } from "@/components/PageHeader";
 import { ChartPlaceholder } from "@/components/ui/ChartPlaceholder";
+import { useRouter } from "next/navigation";
 import {
   IconCpu,
   IconBell,
@@ -17,6 +18,7 @@ import {
 } from "@tabler/icons-react";
 
 export default function PortalAiDashboard() {
+  const router = useRouter();
   const {
     loginAsRole,
     activeTabs,
@@ -25,10 +27,18 @@ export default function PortalAiDashboard() {
     logs,
   } = useApp();
 
-  // Ensure role is synchronized
+  // Ensure role is synchronized and protected
   useEffect(() => {
-    loginAsRole("portal");
-  }, [loginAsRole]);
+    const token = localStorage.getItem("token");
+    const savedRole = localStorage.getItem("user_role");
+    if (!token || !savedRole) {
+      router.push("/auth");
+    } else if (savedRole !== "portal") {
+      router.push(`/${savedRole}`);
+    } else {
+      loginAsRole("portal");
+    }
+  }, [loginAsRole, router]);
 
   const activeTab = activeTabs.portal || "System status";
 

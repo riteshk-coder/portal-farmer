@@ -37,8 +37,8 @@ class ContractResponse(BaseSchema):
 
     @field_serializer("amount")
     def serialize_amount_lakhs(self, amount: float) -> float:
-        # Convert total ₹ value from DB to Lakhs (₹ / 100,000) for the frontend response
-        return float(amount) / 100000.0
+        # DB value is already in Lakhs
+        return float(amount)
 
 
 # Backward-compatible aliases

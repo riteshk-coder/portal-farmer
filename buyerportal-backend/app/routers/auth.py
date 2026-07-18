@@ -118,9 +118,22 @@ def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
             mobile=mobile,
             role_type=RoleType.buyer,
             buyer_id=buyer.id,
-            system_role_id=2
+            system_role_id=2,
+            member_status="Active"
         )
         db.add(user)
+        db.flush()
+        
+        # Admin Notification #3 (System)
+        admin_buyer_msg = f"New Buyer registration: {buyer.name}, GSTIN {buyer.gstin or '27AAAPL1234C1Z5'}. Awaiting verification."
+        log_notification(db, NotificationChannel.system, "MahaFPC", admin_buyer_msg, recipient_role="mahafpc", event_type="new_buyer_registered")
+        
+        # Admin Notification #5 (System)
+        from datetime import datetime
+        submitted_date = datetime.utcnow().strftime("%d %b")
+        admin_buyer_msg_pending = f"Verification pending: Buyer '{buyer.name}' — submitted {submitted_date}, awaiting KYC review."
+        log_notification(db, NotificationChannel.system, "MahaFPC", admin_buyer_msg_pending, recipient_role="mahafpc", event_type="verification_pending")
+        
     elif role in ("fpo", "fpo-farmer"):
         fpo = Fpo(
             name=payload.fullName,
@@ -139,9 +152,20 @@ def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
             mobile=mobile,
             role_type=RoleType.fpo,
             fpo_id=fpo.id,
-            system_role_id=2
+            system_role_id=2,
+            member_status="Active"
         )
         db.add(user)
+        db.flush()
+        
+        # Admin Notification #2 (System)
+        admin_fpo_msg = f"New FPO registration: {fpo.name}, Reg No. {fpo.fpo_registration_number or 'FPO-2201'}. Awaiting verification."
+        log_notification(db, NotificationChannel.system, "MahaFPC", admin_fpo_msg, recipient_role="mahafpc", event_type="new_fpo_registered")
+        
+        # Admin Notification #6 (System)
+        admin_fpo_msg_comp = f"Verification completed: FPO '{fpo.name}' approved and activated."
+        log_notification(db, NotificationChannel.system, "MahaFPC", admin_fpo_msg_comp, recipient_role="mahafpc", event_type="verification_completed")
+        
     elif role == "consultant":
         consultant = Consultant(
             name=payload.fullName,
@@ -158,7 +182,8 @@ def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
             mobile=mobile,
             role_type=RoleType.consultant,
             consultant_id=consultant.id,
-            system_role_id=2
+            system_role_id=2,
+            member_status="Active"
         )
         db.add(user)
     else:
@@ -166,6 +191,7 @@ def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
         
     db.commit()
     return {"message": "Registration successful."}
+
 
 @router.post("/login/google")
 def login_google(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
@@ -217,6 +243,11 @@ def login_google(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
             db.add(user)
             db.commit()
             db.refresh(user)
+    
+    # Auto-activate invited members who successfully login via Google (email verified by Google)
+    if user and hasattr(user, "member_status") and user.member_status == "Pending":
+        user.member_status = "Active"
+        db.commit()
             
     if not user:
         raise HTTPException(
@@ -224,6 +255,13 @@ def login_google(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
             detail=f"No account found for email {email} under role {role}. Please register first."
         )
         
+    onboarding_completed = False
+    if user.role_type.value == "buyer" and user.buyer_id is not None:
+        from app.models.user import Buyer
+        buyer = db.query(Buyer).filter(Buyer.id == user.buyer_id).first()
+        if buyer:
+            onboarding_completed = buyer.onboarding_completed
+
     access_token = create_access_token(data={"sub": str(user.id)})
     return {
         "access_token": access_token,
@@ -232,7 +270,8 @@ def login_google(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
         "userId": user.id,
         "name": user.name,
         "email": user.email,
-        "position": user.employee_role
+        "position": user.employee_role,
+        "onboardingCompleted": onboarding_completed
     }
 
 def normalize_to_e164(mobile: str) -> str:
@@ -262,7 +301,7 @@ def otp_send(payload: OtpSendRequest, response: Response):
         print(f" [DEV MODE] Dynamic OTP Code generated for {mobile}: {code}")
         print("="*80 + "\n")
         response.headers["X-OTP-Dev-Mode"] = "true"
-        return {"message": "OTP sent successfully."}
+        return {"message": "OTP sent successfully.", "otp": code}
         
     if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN or not settings.TWILIO_VERIFY_SERVICE_SID:
         raise HTTPException(
@@ -332,6 +371,13 @@ def otp_verify(payload: OtpVerifyRequest, response: Response, db: Session = Depe
                 detail="Your account is pending approval from your organization." if user.member_status == "Pending" else "Your registration was not approved."
             )
             
+        onboarding_completed = False
+        if user.role_type.value == "buyer" and user.buyer_id is not None:
+            from app.models.user import Buyer
+            buyer = db.query(Buyer).filter(Buyer.id == user.buyer_id).first()
+            if buyer:
+                onboarding_completed = buyer.onboarding_completed
+
         access_token = create_access_token(data={"sub": str(user.id)})
         return {
             "access_token": access_token,
@@ -340,7 +386,8 @@ def otp_verify(payload: OtpVerifyRequest, response: Response, db: Session = Depe
             "userId": user.id,
             "name": user.name,
             "email": user.email,
-            "position": user.employee_role
+            "position": user.employee_role,
+            "onboardingCompleted": onboarding_completed
         }
         
     return {"message": "OTP verified successfully."}
@@ -364,7 +411,19 @@ def invite_admin(payload: AdminInviteRequest, db: Session = Depends(get_db)):
     return {"message": f"Admin invite sent successfully to {email}."}
 
 @router.get("/me")
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    onboarding_completed = False
+    if current_user.role_type.value == "buyer" and current_user.buyer_id is not None:
+        from app.models.user import Buyer
+        buyer = db.query(Buyer).filter(Buyer.id == current_user.buyer_id).first()
+        if buyer:
+            onboarding_completed = buyer.onboarding_completed
+    elif current_user.role_type.value == "fpo" and current_user.fpo_id is not None:
+        from app.models.user import Fpo
+        fpo = db.query(Fpo).filter(Fpo.id == current_user.fpo_id).first()
+        if fpo:
+            onboarding_completed = fpo.onboarding_completed
+
     return {
         "id": current_user.id,
         "name": current_user.name,
@@ -373,7 +432,8 @@ def get_me(current_user: User = Depends(get_current_user)):
         "system_role_id": current_user.system_role_id,
         "fpoId": current_user.fpo_id,
         "buyerId": current_user.buyer_id,
-        "position": current_user.employee_role
+        "position": current_user.employee_role,
+        "onboardingCompleted": onboarding_completed
     }
 
 @router.get("/members", response_model=list[CompanyMemberResponse])
@@ -423,7 +483,7 @@ def add_member(payload: AddMemberRequest, current_user: User = Depends(get_curre
         buyer_id=current_user.buyer_id,
         employee_role=payload.role.strip(),
         system_role_id=2,
-        member_status="Pending",
+        member_status="Active",  # Activate immediately so they can login after setting password
         password_hash=None,
         invited_by=current_user.id,
         invite_token=invite_token
@@ -437,9 +497,24 @@ def add_member(payload: AddMemberRequest, current_user: User = Depends(get_curre
         db, 
         NotificationChannel.email, 
         email, 
-        f"Welcome! You have been added as a member by {current_user.name}. "
-        f"Please complete your registration setting your password at: {invite_url}"
+        f"Welcome! You have been added as a member by {current_user.name}. Please complete your registration setting your password at: {invite_url}",
+        recipient_role="buyer" if current_user.buyer_id else "fpo",
+        event_type="invitation_sent"
     )
+    
+    company_name = "System"
+    role_label = "FPO"
+    if current_user.buyer_id:
+        buyer = db.query(Buyer).filter(Buyer.id == current_user.buyer_id).first()
+        company_name = buyer.name if buyer else "Buyer"
+        role_label = "Buyer"
+    elif current_user.fpo_id:
+        fpo = db.query(Fpo).filter(Fpo.id == current_user.fpo_id).first()
+        company_name = fpo.name if fpo else "FPO"
+        role_label = "FPO"
+
+    admin_msg = f"New team member '{new_member.name}' added under {role_label} '{company_name}' — status Pending."
+    log_notification(db, NotificationChannel.system, "MahaFPC", admin_msg, recipient_role="mahafpc", event_type="new_user_registered")
     
     print(f"\n[INVITE SENT] Email: {email} | Registration Link: {invite_url}\n")
     
@@ -518,7 +593,8 @@ def complete_registration(payload: CompleteRegistrationRequest, db: Session = De
     token = payload.token.strip()
     password = payload.password.strip()
     
-    user = db.query(User).filter(User.invite_token == token, User.member_status == "Pending").first()
+    # Accept both Pending and Active statuses so members can always set/reset password via invite link
+    user = db.query(User).filter(User.invite_token == token, User.member_status.in_(["Pending", "Active"])).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired registration token.")
         
@@ -526,8 +602,10 @@ def complete_registration(payload: CompleteRegistrationRequest, db: Session = De
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
         
     user.password_hash = hash_password(password)
+    # Ensure they are active after setting their password
+    user.member_status = "Active"
     db.commit()
-    return {"message": "Password registered successfully. Please wait for approval from your organization administrator."}
+    return {"message": "Password set successfully. You can now log in with your email and password."}
 
 @router.post("/members/{member_id}/approve")
 def approve_member(member_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

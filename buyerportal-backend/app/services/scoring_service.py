@@ -40,6 +40,10 @@ def recalculate_fpo_score(fpo: Fpo, db: Session, action: str) -> None:
 
     Actions:
       successful_delivery → +2  (GRN issued and funds released cleanly)
+      dispute_lost        → -10 (dispute resolved against FPO; floor: 0)
     """
     if action == "successful_delivery":
         fpo.reliability_score = min(100, fpo.reliability_score + 2)
+    elif action == "dispute_lost":
+        fpo.reliability_score = max(0, fpo.reliability_score - 10)
+

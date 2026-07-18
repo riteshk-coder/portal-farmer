@@ -64,7 +64,11 @@ export default function VerifyOtpPage() {
         localStorage.setItem("user_email", data.email || "");
         localStorage.setItem("user_position", data.position || "");
         loginAsRole(role as any);
-        router.push(config.redirectPath);
+        if ((role === "buyer" || role === "fpo") && data.onboardingCompleted === false) {
+          router.push(`/onboarding/${role}`);
+        } else {
+          router.push(config.redirectPath);
+        }
       } else {
         // Registration success redirect -> proceed to onboarding profile completion
         router.push(`/onboarding/${role}?mobile=${mobile}`);

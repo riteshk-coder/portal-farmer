@@ -29,9 +29,18 @@ class Lot(Base):
     notes = Column(Text, nullable=True)
     fpo_id = Column(Integer, ForeignKey("fpos.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    product_photo = Column(String, nullable=True)
+    lab_report_url = Column(String, nullable=True)
+    
+    product_type_id = Column(Integer, ForeignKey("product_types.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("product_categories.id"), nullable=True)
+    custom_product_name = Column(String, nullable=True)
+
     fpo = relationship("Fpo", back_populates="lots")
     matches = relationship("LotMatch", back_populates="lot", cascade="all, delete-orphan")
     quotes = relationship("Quote", back_populates="lot")
+    product_type = relationship("ProductType")
+    category = relationship("ProductCategory")
 
 class LotMatch(Base):
     __tablename__ = "lot_matches"

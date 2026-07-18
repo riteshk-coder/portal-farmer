@@ -51,7 +51,8 @@ def get_fpo_score(fpo_id: int, db: Session = Depends(get_db), current_user: User
         "name": fpo.name,
         "rating": fpo.rating,
         "gradeConformance": fpo.grade_conformance,
-        "membersCount": fpo.members_count
+        "membersCount": fpo.members_count,
+        "reliabilityScore": fpo.reliability_score
     }
 
 @router.get("/buyer/{buyer_id}")

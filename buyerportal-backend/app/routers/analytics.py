@@ -6,14 +6,14 @@ from app.core.deps import get_current_user
 from app.models.lot import Lot, LotStatus
 from app.models.contract import Contract, EscrowStatus
 from app.models.dispute import Dispute, DisputeStatus
-from app.models.user import User, Fpo, Buyer
+from app.models.user import User, Fpo, Buyer, RoleType
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/overview")
 def get_overview(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
-    Returns platform-wide KPI counters matching Next.js overview dashboard metrics.
+    Return platform-wide overview counters.
     """
     total_transactions = db.query(Contract).count()
     
@@ -26,7 +26,7 @@ def get_overview(db: Session = Depends(get_db), current_user: User = Depends(get
     open_disputes = db.query(Dispute).filter(Dispute.status != DisputeStatus.resolved).count()
     active_fpos = db.query(Fpo).count()
     active_buyers = db.query(Buyer).count()
-    active_escrows = db.query(User).filter(User.role_type == "escrow").count()
+    active_escrows = db.query(User).filter(User.role_type == RoleType.escrow).count()
 
     return {
         "totalTransactions": total_transactions,

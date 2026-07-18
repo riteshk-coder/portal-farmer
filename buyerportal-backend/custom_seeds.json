@@ -1,6 +1,18 @@
 {
   "users": [],
-  "buyers": [],
+  "buyers": [
+    {
+      "id": 6,
+      "name": "Ritesh Khatakar",
+      "location": "Nashik, MH",
+      "reliability_score": 70,
+      "payment_days_avg": "3.0 days",
+      "volume_traded": "0 MT",
+      "company_name": "ken terma",
+      "business_type": "Trader",
+      "gstin": ""
+    }
+  ],
   "fpos": [],
   "consultants": [],
   "admin_invites": [
@@ -8,7 +20,15 @@
       "id": 99,
       "email": "riteshk@ova.ngo",
       "employee_id": "EMP-0925",
-      "invited_at": "2026-07-17T10:36:17.556884"
+      "invited_at": "2026-07-18T11:58:13.584668"
     }
-  ]
+  ],
+  "lots": [],
+  "lot_matches": [],
+  "quotes": [],
+  "contracts": [],
+  "disputes": [],
+  "ledger_entries": [],
+  "farmer_splits": [],
+  "system_logs": []
 }

@@ -15,7 +15,8 @@ def run_ai_matching(lot: Lot, db: Session) -> list[LotMatch]:
     Utilizes Anthropic client with strict 2.5s timeout and JSON contract verification.
     Gracefully falls back to rule-based matching on failures, timeouts, or format errors.
     """
-    buyers = db.query(Buyer).all()
+    from app.services.matching import filter_buyers_by_preferences
+    buyers = filter_buyers_by_preferences(lot, db)
     if not buyers:
         logger.info("No registered buyers found for matching.")
         return []

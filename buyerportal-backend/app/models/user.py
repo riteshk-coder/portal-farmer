@@ -2,6 +2,8 @@ from sqlalchemy import Column, String, Boolean, Integer, ForeignKey, Enum as SAE
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
+from app.models.product_category import ProductCategory
+from app.models.product_type import ProductType
 
 class RoleType(str, enum.Enum):
     fpo = "fpo"
@@ -50,6 +52,20 @@ class Fpo(Base):
     village = Column(String, nullable=True)
     bank_account_num = Column(String, nullable=True)
     bank_ifsc = Column(String, nullable=True)
+    onboarding_completed = Column(Boolean, default=False)
+    product_preferences = relationship("FpoProductPreference", back_populates="fpo", cascade="all, delete-orphan")
+
+class FpoProductPreference(Base):
+    __tablename__ = "fpo_product_preferences"
+    id = Column(Integer, primary_key=True, index=True)
+    fpo_id = Column(Integer, ForeignKey("fpos.id"), nullable=False)
+    product_type_id = Column(Integer, ForeignKey("product_types.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("product_categories.id"), nullable=True)
+    custom_product_name = Column(String, nullable=True)
+
+    fpo = relationship("Fpo", back_populates="product_preferences")
+    product_type = relationship("ProductType")
+    category = relationship("ProductCategory")
 
 class Buyer(Base):
     __tablename__ = "buyers"
@@ -64,6 +80,22 @@ class Buyer(Base):
     company_name = Column(String, nullable=True)
     business_type = Column(String, nullable=True)
     gstin = Column(String, nullable=True)
+    onboarding_completed = Column(Boolean, default=False)
+
+    product_preferences = relationship("BuyerProductPreference", back_populates="buyer", cascade="all, delete-orphan")
+
+class BuyerProductPreference(Base):
+    __tablename__ = "buyer_product_preferences"
+    id = Column(Integer, primary_key=True, index=True)
+    buyer_id = Column(Integer, ForeignKey("buyers.id"), nullable=False)
+    product_type_id = Column(Integer, ForeignKey("product_types.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("product_categories.id"), nullable=True)
+    custom_product_name = Column(String, nullable=True)
+
+    buyer = relationship("Buyer", back_populates="product_preferences")
+    product_type = relationship("ProductType")
+    category = relationship("ProductCategory")
+
 
 class Consultant(Base):
     __tablename__ = "consultants"

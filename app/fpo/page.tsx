@@ -11,6 +11,7 @@ import { KpiCard } from "@/components/KpiCard";
 import { PageHeader } from "@/components/PageHeader";
 import { ChartPlaceholder } from "@/components/ui/ChartPlaceholder";
 import { Button } from "@/components/ui/Button";
+import { useRouter } from "next/navigation";
 import {
   IconPlus,
   IconPackage,
@@ -18,9 +19,11 @@ import {
   IconTruck,
   IconWallet,
   IconBook,
+  IconX,
 } from "@tabler/icons-react";
 
 export default function FpoDashboard() {
+  const router = useRouter();
   const {
     loginAsRole,
     activeTabs,
@@ -33,20 +36,76 @@ export default function FpoDashboard() {
     openModal,
     showToast,
     respondToQuote,
+    dispatchGoods,
     logs,
     disputes,
     fileDispute,
   } = useApp();
 
-  // Ensure role is synchronized
+  // Ensure role is synchronized and protected
   useEffect(() => {
-    loginAsRole("fpo");
-  }, [loginAsRole]);
+    const token = localStorage.getItem("token");
+    const savedRole = localStorage.getItem("user_role");
+    if (!token || !savedRole) {
+      router.push("/auth");
+    } else if (savedRole !== "fpo") {
+      router.push(`/${savedRole}`);
+    } else {
+      loginAsRole("fpo");
+    }
+  }, [loginAsRole, router]);
 
   const activeTab = activeTabs.fpo || "Overview";
 
+  // Dismissible onboarding banner state (persisted per user in localStorage)
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+  useEffect(() => {
+    const email = localStorage.getItem("user_email") || "fpo";
+    const dismissed = localStorage.getItem(`onboarding_dismissed_${email}`);
+    if (dismissed === "true") setOnboardingDismissed(true);
+  }, []);
+
+  const dismissOnboarding = () => {
+    const email = localStorage.getItem("user_email") || "fpo";
+    localStorage.setItem(`onboarding_dismissed_${email}`, "true");
+    setOnboardingDismissed(true);
+  };
+
   // Upload Form states
-  const [commodity, setCommodity] = useState("Erode finger");
+  const { categories, fpoPreferences } = useApp();
+
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedProductTypeId, setSelectedProductTypeId] = useState("");
+  const [customProductName, setCustomProductName] = useState("");
+  const [categoryProducts, setCategoryProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (selectedCategoryId) {
+      const fetchProducts = async () => {
+        try {
+          const token = localStorage.getItem("token");
+          const res = await fetch(`http://localhost:8000/lots/product-categories/${selectedCategoryId}/products`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+            setCategoryProducts(await res.json());
+          }
+        } catch (err) {
+          console.error("Failed to load products for category", selectedCategoryId, err);
+        }
+      };
+      fetchProducts();
+      setSelectedProductTypeId("");
+      setCustomProductName("");
+    } else {
+      setCategoryProducts([]);
+    }
+  }, [selectedCategoryId]);
+
+  const [productPhoto, setProductPhoto] = useState<File | null>(null);
+  const [labReport, setLabReport] = useState<File | null>(null);
+
   const [qty, setQty] = useState("");
   const [grade, setGrade] = useState("Premium");
   const [curcumin, setCurcumin] = useState("");
@@ -64,23 +123,51 @@ export default function FpoDashboard() {
       return;
     }
 
+    if (!selectedCategoryId) {
+      showToast("Please select a product category.", "error");
+      return;
+    }
+    if (!selectedProductTypeId) {
+      showToast("Please select a product name.", "error");
+      return;
+    }
+    if (selectedProductTypeId === "other" && !customProductName.trim()) {
+      showToast("Please enter a custom product name.", "error");
+      return;
+    }
+
+    const cat = categories.find(c => c.id === parseInt(selectedCategoryId));
+    const prod = categoryProducts.find(p => p.id === parseInt(selectedProductTypeId));
+    const catName = cat ? cat.name : "";
+    const prodName = prod ? prod.name : (selectedProductTypeId === "other" ? customProductName : "");
+    const description = `${prodName} (${catName})`;
+
     uploadLot({
-      description: `${commodity} turmeric`,
+      description,
       qty: q,
       grade,
       priceExpectation: p,
       location: location || "Nashik, MH",
+      categoryId: parseInt(selectedCategoryId),
+      productTypeId: selectedProductTypeId !== "other" ? parseInt(selectedProductTypeId) : undefined,
+      customProductName: selectedProductTypeId === "other" ? customProductName : undefined,
+      labReport,
+      productPhoto,
     });
 
     // Reset and redirect
-    setCommodity("Erode finger");
+    setSelectedCategoryId("");
+    setSelectedProductTypeId("");
+    setCustomProductName("");
     setQty("");
-    setGrade("A");
+    setGrade("Premium");
     setCurcumin("");
     setPriceExpectation("");
     setHarvestDate("");
     setLocation("");
     setNotes("");
+    setProductPhoto(null);
+    setLabReport(null);
 
     setActiveTabForRole("fpo", "My lots");
   };
@@ -98,8 +185,15 @@ export default function FpoDashboard() {
         />
 
         {/* Onboarding Banner for New Users */}
-        {lots.length === 0 && (
-          <div className="bg-gradient-to-r from-teal-bg to-bg-s border border-primary/20 rounded-2xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        {lots.length === 0 && !onboardingDismissed && (
+          <div className="bg-gradient-to-r from-teal-bg to-bg-s border border-primary/20 rounded-2xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative">
+            <button
+              onClick={dismissOnboarding}
+              className="absolute top-3 right-3 text-tx-t hover:text-tx-p transition-colors"
+              aria-label="Dismiss onboarding"
+            >
+              <IconX className="w-4 h-4" />
+            </button>
             <div className="space-y-1">
               <h3 className="text-base font-bold text-tx-p flex items-center gap-2">
                 <span>Welcome to Buyer Portal Onboarding!</span>
@@ -110,7 +204,7 @@ export default function FpoDashboard() {
             </div>
             <Button
               size="sm"
-              onClick={() => openModal("user-guide")}
+              onClick={() => { openModal("user-guide"); dismissOnboarding(); }}
               className="text-xs font-semibold px-4 whitespace-nowrap"
             >
               Open Quick Start Guide
@@ -223,28 +317,72 @@ export default function FpoDashboard() {
               </div>
             </Card>
 
+            {/* Product Focus Preferences */}
+            <Card title="Product Focus" subtitle="Your registered product categories & custom varieties">
+              {fpoPreferences && fpoPreferences.categories && fpoPreferences.categories.length > 0 ? (
+                <div className="space-y-3 text-[11px] font-semibold">
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories.filter(c => fpoPreferences.categories.includes(c.id)).map(cat => (
+                      <span key={cat.id} className="inline-flex items-center gap-1 bg-teal-bg text-primary px-2.5 py-1 rounded-lg">
+                        <span>{cat.emoji || "🌱"}</span>
+                        <span>{cat.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                  {fpoPreferences.rows && fpoPreferences.rows.length > 0 && (
+                    <div className="pt-2.5 border-t border-bd-t space-y-1">
+                      <div className="text-[10px] text-tx-t uppercase tracking-wider font-bold">Registered Varieties</div>
+                      <div className="space-y-1 text-tx-s max-h-[120px] overflow-y-auto pr-1">
+                        {fpoPreferences.rows.map((row: any, idx: number) => {
+                          const cat = categories.find(c => c.id === row.categoryId);
+                          return (
+                            <div key={idx} className="flex justify-between items-center py-0.5">
+                              <span>
+                                {row.customProductName ? (
+                                  <span className="font-bold text-tx-p">{row.customProductName} <span className="text-[9px] text-tx-t font-semibold">(Custom)</span></span>
+                                ) : (
+                                  <span className="font-semibold text-tx-p">
+                                    Turmeric variety
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[9px] text-tx-t">{cat?.emoji || "🌱"} {cat?.name}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-tx-t text-xs font-semibold border border-dashed border-bd-t rounded-xl">
+                  No focus preferences selected. Configure in profile settings.
+                </div>
+              )}
+            </Card>
+
             {/* Notifications */}
             <Card title="Recent notifications">
               <div className="space-y-3.5 text-[12px] font-semibold">
-                {(logs && logs.length > 0
-                  ? logs.filter(l => l.recipient.includes("FPO") || l.channel === "System")
-                  : [
-                      { message: "LOT-2841 matched with 3 buyers", timestamp: "10 min ago", channel: "System" },
-                      { message: "Counter-offer received on LOT-2844", timestamp: "1 hr ago", channel: "SMS" },
-                      { message: "₹4.2L payout scheduled for 25 Jun", timestamp: "2 hr ago", channel: "System" }
-                    ]
-                ).slice(0, 4).map((notif, idx) => (
-                  <div key={idx} className="flex gap-2.5 items-start">
-                    <div className={cn(
-                      "w-2 h-2 rounded-full shrink-0 mt-1.5",
-                      notif.channel === "System" ? "bg-teal-accent" : "bg-amb"
-                    )} />
-                    <div>
-                      <div className="text-tx-p leading-tight">{notif.message}</div>
-                      <div className="text-[10px] text-tx-t mt-1">{notif.timestamp}</div>
-                    </div>
-                  </div>
-                ))}
+                {logs && logs.length > 0 ? (
+                  logs
+                    .filter(l => l.recipientRole === "fpo" || l.channel === "System")
+                    .slice(0, 4)
+                    .map((notif, idx) => (
+                      <div key={idx} className="flex gap-2.5 items-start">
+                        <div className={cn(
+                          "w-2 h-2 rounded-full shrink-0 mt-1.5",
+                          notif.channel === "System" ? "bg-teal-accent" : "bg-amb"
+                        )} />
+                        <div>
+                          <div className="text-tx-p leading-tight">{notif.message}</div>
+                          <div className="text-[10px] text-tx-t mt-1">{notif.timestamp}</div>
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <p className="text-tx-t text-[11px]">No recent notifications.</p>
+                )}
               </div>
             </Card>
           </div>
@@ -349,6 +487,10 @@ export default function FpoDashboard() {
   };
 
   const renderUploadLot = () => {
+    const allowedCategories = fpoPreferences && fpoPreferences.categories && fpoPreferences.categories.length > 0
+      ? categories.filter((c) => fpoPreferences.categories.includes(c.id))
+      : categories;
+
     return (
       <div className="space-y-4 animate-fade-in">
         <button
@@ -367,31 +509,58 @@ export default function FpoDashboard() {
         {/* Form Card */}
         <Card title="Lot details">
           <form onSubmit={handleUploadSubmit} className="text-[12px] font-semibold">
-            {/* Row 1: Lot ID & Variety */}
+            {/* Row 1: Category & Product Name Selection */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[11.5px] font-bold text-tx-s mb-1">Lot ID (auto-generated)</label>
-                <input
-                  type="text"
-                  value="LOT-2847"
-                  disabled
-                  className="w-full bg-bg-s border border-bd-t rounded px-2.5 py-1.5 font-semibold text-tx-s cursor-not-allowed select-none focus:outline-none"
-                />
+                <label className="block text-[11.5px] font-bold text-tx-s mb-1">Product Category</label>
+                <select
+                  value={selectedCategoryId}
+                  onChange={(e) => setSelectedCategoryId(e.target.value)}
+                  className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m"
+                  required
+                >
+                  <option value="">-- Select Category --</option>
+                  {allowedCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.emoji || "🌱"} {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="block text-[11.5px] font-bold text-tx-s mb-1">Variety</label>
+                <label className="block text-[11.5px] font-bold text-tx-s mb-1">Product Name</label>
                 <select
-                  value={commodity}
-                  onChange={(e) => setCommodity(e.target.value)}
-                  className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m"
+                  value={selectedProductTypeId}
+                  onChange={(e) => setSelectedProductTypeId(e.target.value)}
+                  disabled={!selectedCategoryId}
+                  className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m disabled:opacity-50"
+                  required
                 >
-                  <option value="Erode finger">Erode finger</option>
-                  <option value="Salem bulb">Salem bulb</option>
-                  <option value="Nizamabad">Nizamabad</option>
-                  <option value="Rajapuri">Rajapuri</option>
+                  <option value="">-- Select Product --</option>
+                  {categoryProducts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                  {selectedCategoryId && <option value="other">Other</option>}
                 </select>
               </div>
             </div>
+
+            {/* Custom Product Name Field (conditional on "Other") */}
+            {selectedProductTypeId === "other" && (
+              <div className="mt-4 animate-fade-in">
+                <label className="block text-[11.5px] font-bold text-tx-s mb-1">Enter Custom Product Name</label>
+                <input
+                  type="text"
+                  value={customProductName}
+                  onChange={(e) => setCustomProductName(e.target.value)}
+                  placeholder="e.g. Turmeric Body Butter"
+                  className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m"
+                  required
+                />
+              </div>
+            )}
 
             {/* Row 2: Qty, Grade, Curcumin */}
             <div className="grid grid-cols-3 gap-4 mt-4">
@@ -467,13 +636,33 @@ export default function FpoDashboard() {
               />
             </div>
 
-            {/* Row 5: Lab test report */}
-            <div className="mt-4">
-              <label className="block text-[11.5px] font-bold text-tx-s mb-1">Lab test report</label>
-              <input
-                type="file"
-                className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1 text-[12px] font-semibold text-tx-p focus:outline-none file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-bg-t file:text-tx-s file:hover:bg-bg-t/80 cursor-pointer"
-              />
+            {/* Row 5: Lab test report & Product Photo */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-[11.5px] font-bold text-tx-s mb-1">Lab test report</label>
+                <input
+                  type="file"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setLabReport(e.target.files[0]);
+                    }
+                  }}
+                  className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1 text-[12px] font-semibold text-tx-p focus:outline-none file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-bg-t file:text-tx-s file:hover:bg-bg-t/80 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-bold text-tx-s mb-1">Product Photo (Real-time)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setProductPhoto(e.target.files[0]);
+                    }
+                  }}
+                  className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1 text-[12px] font-semibold text-tx-p focus:outline-none file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-bg-t file:text-tx-s file:hover:bg-bg-t/80 cursor-pointer"
+                />
+              </div>
             </div>
 
             {/* Row 6: Additional notes */}
@@ -729,6 +918,31 @@ export default function FpoDashboard() {
         header: "Escrow Deposit Status",
         render: (item: any) => <Pill status={item.escrowStatus} />,
       },
+      {
+        header: "Actions",
+        render: (item: any) => {
+          if (item.status === "Signed" && item.escrowStatus === "Deposited") {
+            return (
+              <button
+                onClick={async () => {
+                  showToast(`Dispatching order for contract ${item.id}...`, "info");
+                  await dispatchGoods(item.id);
+                }}
+                className="px-2.5 py-0.5 text-[11px] font-bold text-white bg-amb hover:bg-amb-m rounded transition-colors shrink-0"
+              >
+                Dispatch Goods
+              </button>
+            );
+          }
+          if (item.status === "Dispatched") {
+            return <span className="text-[11px] font-semibold text-tx-s">Dispatched</span>;
+          }
+          if (item.status === "GRN Issued") {
+            return <span className="text-[11px] font-semibold text-teal-accent">GRN Issued</span>;
+          }
+          return <span className="text-[11px] font-semibold text-tx-t">Awaiting Escrow</span>;
+        }
+      },
     ];
 
     return (
@@ -812,30 +1026,40 @@ export default function FpoDashboard() {
   };
 
   const renderDisputes = () => {
-    const fpoDisputes = disputes.filter((d) => d.fpoName === "Nashik Agro FPO");
+    const filedDisputes = disputes.filter((d) => d.creatorRole === "fpo");
+    const incomingDisputes = disputes.filter((d) => d.creatorRole === "buyer");
 
     const handleFileDispute = (e: React.FormEvent) => {
       e.preventDefault();
       const form = e.currentTarget as HTMLFormElement;
-      const type = (form.elements.namedItem("disputeType") as HTMLSelectElement).value as Dispute["type"];
+      const type = (form.elements.namedItem("disputeType") as HTMLSelectElement).value;
       const lotId = (form.elements.namedItem("lotId") as HTMLSelectElement).value;
       const desc = (form.elements.namedItem("description") as HTMLTextAreaElement).value;
+      const attachmentUrl = (form.elements.namedItem("attachmentUrl") as HTMLInputElement).value;
       
       if (!lotId || !desc) {
         showToast("Please fill in all fields to file complaint.", "error");
         return;
       }
-      fileDispute(type, lotId, desc);
+      fileDispute(type, lotId, desc, attachmentUrl || undefined);
       form.reset();
     };
 
-    const columns = [
+    const getColumns = (isIncoming: boolean) => [
       { header: "Case ID", render: (item: any) => <span className="font-mono font-bold text-tx-p">{item.id}</span> },
       { header: "Type", render: (item: any) => <span className="text-cor font-bold">{item.type}</span> },
       { header: "Lot ID", render: (item: any) => <span className="font-mono text-tx-s">{item.lotId}</span> },
-      { header: "Buyer", render: (item: any) => <span className="font-semibold text-tx-p">{item.buyerName}</span> },
-      { header: "Summary", render: (item: any) => <span className="text-tx-s">{item.description}</span> },
+      { header: isIncoming ? "Filer Buyer" : "Accused Buyer", render: (item: any) => <span className="font-semibold text-tx-p">{item.buyerName}</span> },
+      { header: "Summary", render: (item: any) => <span className="text-tx-s truncate max-w-[120px] block">{item.description}</span> },
       { header: "Status", render: (item: any) => <Pill status={item.status} /> },
+      {
+        header: "Action",
+        render: (item: any) => (
+          <Button size="sm" onClick={() => openModal("dispute-details", { dispute: item })}>
+            View Thread
+          </Button>
+        ),
+      },
     ];
 
     return (
@@ -847,7 +1071,7 @@ export default function FpoDashboard() {
         >
           &larr; Back to Overview
         </button>
-        <PageHeader title="Disputes & Complaints" subtitle="File quality conformance or payment hold disputes with MahaFPC Regulator" />
+        <PageHeader title="Disputes & Complaints" subtitle="Bidirectional complaint resolution and arbitration portal" />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           <div className="lg:col-span-4">
@@ -874,10 +1098,20 @@ export default function FpoDashboard() {
                   <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Detailed Complaint Summary</label>
                   <textarea
                     name="description"
-                    rows={4}
+                    rows={3}
                     placeholder="Provide details about quality report differences or unpaid escrow holds..."
                     className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m"
                     required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-tx-s mb-1.5 uppercase tracking-wide">Attachment Link (optional)</label>
+                  <input
+                    type="text"
+                    name="attachmentUrl"
+                    placeholder="e.g. http://imgur.com/photo.jpg"
+                    className="w-full bg-bg-p border border-bd-s rounded px-2.5 py-1.5 font-semibold text-tx-p focus:outline-none focus:border-teal-m"
                   />
                 </div>
 
@@ -886,9 +1120,13 @@ export default function FpoDashboard() {
             </Card>
           </div>
 
-          <div className="lg:col-span-8">
-            <Card title="Dispute Log & Case Status" subtitle="Ongoing quality disputes and regulatory resolutions">
-              <DataTable columns={columns} data={fpoDisputes} emptyMessage="No disputes filed by your FPO." />
+          <div className="lg:col-span-8 space-y-6">
+            <Card title="Filed Disputes" subtitle="Complaints raised by you against Buyers">
+              <DataTable columns={getColumns(false)} data={filedDisputes} emptyMessage="No disputes filed by your FPO." />
+            </Card>
+
+            <Card title="Incoming Disputes" subtitle="Complaints filed against you by Buyers">
+              <DataTable columns={getColumns(true)} data={incomingDisputes} emptyMessage="No disputes filed against your FPO." />
             </Card>
           </div>
         </div>

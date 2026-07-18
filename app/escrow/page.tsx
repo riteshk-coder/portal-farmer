@@ -9,9 +9,11 @@ import { DataTable } from "@/components/DataTable";
 import { KpiCard } from "@/components/KpiCard";
 import { PageHeader } from "@/components/PageHeader";
 import { ChartPlaceholder } from "@/components/ui/ChartPlaceholder";
+import { useRouter } from "next/navigation";
 import { IconExchange, IconUsers, IconWallet } from "@tabler/icons-react";
 
 export default function EscrowDashboard() {
+  const router = useRouter();
   const {
     loginAsRole,
     activeTabs,
@@ -21,10 +23,18 @@ export default function EscrowDashboard() {
     releaseFunds,
   } = useApp();
 
-  // Ensure role is synchronized
+  // Ensure role is synchronized and protected
   useEffect(() => {
-    loginAsRole("escrow");
-  }, [loginAsRole]);
+    const token = localStorage.getItem("token");
+    const savedRole = localStorage.getItem("user_role");
+    if (!token || !savedRole) {
+      router.push("/auth");
+    } else if (savedRole !== "escrow") {
+      router.push(`/${savedRole}`);
+    } else {
+      loginAsRole("escrow");
+    }
+  }, [loginAsRole, router]);
 
   const activeTab = activeTabs.escrow || "Overview";
 

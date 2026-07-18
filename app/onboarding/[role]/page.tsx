@@ -8,6 +8,7 @@ import { roleConfig } from "@/lib/auth/roleConfig";
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { ProductPreferenceSelector } from "@/components/ProductPreferenceSelector";
 
 export default function OnboardingPage() {
   const params = useParams();
@@ -17,12 +18,12 @@ export default function OnboardingPage() {
   const role = (params.role as string) || "buyer";
   const mobile = searchParams.get("mobile") || "";
   const config = roleConfig[role];
-  const { loginAsRole, showToast } = useApp();
+  const { loginAsRole } = useApp();
 
   const [bankAcc, setBankAcc] = useState("");
   const [bankIfsc, setBankIfsc] = useState("");
-  const [gstin, setGstin] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [preferences, setPreferences] = useState<{ categoryId: number; productTypeId?: number; customProductName?: string }[]>([]);
+  const [fpoStep, setFpoStep] = useState<1 | 2>(1); // Step 1: Bank Details, Step 2: Preferences
 
   if (!config) {
     return (
@@ -32,18 +33,17 @@ export default function OnboardingPage() {
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    
-    // Simulate updating bank info in DB and fetching auth token
-    setTimeout(() => {
-      showToast("Profile onboarding completed successfully!", "success");
-      // Log in and route
-      loginAsRole(role as any);
-      router.push(config.redirectPath);
-    }, 1500);
+  const handleComplete = () => {
+    loginAsRole(role as any);
+    router.push(config.redirectPath);
   };
+
+  const handleEscrowSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleComplete();
+  };
+
+  const isWideBox = role === "buyer" || (role === "fpo" && fpoStep === 2);
 
   return (
     <div className="min-h-screen bg-bg-s flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -56,20 +56,30 @@ export default function OnboardingPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative z-10 w-full max-w-md"
+        className={`relative z-10 w-full transition-all duration-300 ${isWideBox ? "max-w-2xl" : "max-w-md"}`}
       >
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl overflow-hidden shadow-md mb-3">
             <img src="/logo.jpg" alt="Buyer Portal Logo" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-xl font-bold text-tx-p tracking-tight">Complete Onboarding</h1>
-          <p className="text-xs text-tx-s mt-1">Configure your {config.label} payout and tax details</p>
+          <p className="text-xs text-tx-s mt-1">Configure your {config.label} payout and preferences details</p>
         </div>
 
         <div className="bg-bg-p border border-bd-t rounded-xl p-6 sm:p-8 shadow-card">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {role === "fpo" && (
-              <>
+          {role === "fpo" && fpoStep === 1 && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setFpoStep(2);
+              }}
+              className="space-y-6"
+            >
+              <div className="pb-2 border-b border-bd-t">
+                <h3 className="text-sm font-bold text-tx-p">Payout Banking Details</h3>
+                <p className="text-[10px] text-tx-s mt-0.5">Please provide FPO bank details to receive digital crop splits and payout releases.</p>
+              </div>
+              <div className="space-y-4">
                 <Input
                   label="Bank Account Number"
                   type="text"
@@ -88,32 +98,58 @@ export default function OnboardingPage() {
                   floating={false}
                   required
                 />
-              </>
-            )}
-
-            {role === "buyer" && (
-              <Input
-                label="Confirm GSTIN number"
-                type="text"
-                placeholder="e.g. 27AAACP1234A1Z1"
-                value={gstin}
-                onChange={(e) => setGstin(e.target.value)}
-                floating={false}
-                required
-              />
-            )}
-
-            {role === "consultant" && (
-              <div className="text-xs text-tx-s leading-relaxed font-semibold p-3 bg-bg-s rounded border border-bd-t mb-2">
-                As an Agent/Consultant, your credentials will be audited by the MahaFPC compliance board. 
-                Configure notifications matching your associated regional FPO lists to begin.
               </div>
-            )}
+              <Button type="submit" className="w-full flex justify-center items-center gap-2 py-2.5">
+                <span>Continue to Product Preferences</span>
+              </Button>
+            </form>
+          )}
 
-            <Button type="submit" className="w-full flex justify-center items-center gap-2" disabled={isSubmitting}>
-              <IconCheck className="w-4 h-4" /> {isSubmitting ? "Completing setup..." : "Go to Dashboard"}
-            </Button>
-          </form>
+          {role === "fpo" && fpoStep === 2 && (
+            <div className="space-y-4">
+              <div className="pb-2 border-b border-bd-t">
+                <h3 className="text-sm font-bold text-tx-p">FPO Product Focus Preferences</h3>
+                <p className="text-[10px] text-tx-s mt-0.5">Select category or specific product types produced by your farmers to match with buyers.</p>
+              </div>
+              <ProductPreferenceSelector
+                preferences={preferences}
+                onChange={setPreferences}
+                role="fpo"
+                isOnboarding={true}
+                onOnboardingComplete={handleComplete}
+                bankAccountNum={bankAcc}
+                bankIfsc={bankIfsc}
+              />
+            </div>
+          )}
+
+          {role === "buyer" && (
+            <div className="space-y-4">
+              <div className="pb-2 border-b border-bd-t">
+                <h3 className="text-sm font-bold text-tx-p">Select Procurement Preferences</h3>
+                <p className="text-[10px] text-tx-s mt-0.5">Please select at least one product preference to match with relevant supplier lots.</p>
+              </div>
+              <ProductPreferenceSelector
+                preferences={preferences}
+                onChange={setPreferences}
+                role="buyer"
+                isOnboarding={true}
+                onOnboardingComplete={handleComplete}
+              />
+            </div>
+          )}
+
+          {role === "escrow" && (
+            <form onSubmit={handleEscrowSubmit} className="space-y-6">
+              <div className="text-xs text-tx-s leading-relaxed font-semibold p-3 bg-bg-s rounded border border-bd-t mb-2">
+                As an Escrow Service Officer, your credentials will be audited by the MahaFPC compliance board.
+                You will have access to ledger verification and fund release controls.
+              </div>
+              <Button type="submit" className="w-full flex justify-center items-center gap-2 py-2.5">
+                <IconCheck className="w-4 h-4" /> Go to Dashboard
+              </Button>
+            </form>
+          )}
         </div>
       </motion.div>
     </div>
